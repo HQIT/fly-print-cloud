@@ -18,7 +18,7 @@ type EdgeNode struct {
 	Longitude       *float64  `json:"longitude,omitempty"`     // 经度
 	
 	// 网络信息
-	IPAddress      string    `json:"ip_address"`      // IP地址
+	IPAddress      *string   `json:"ip_address,omitempty"`      // IP地址
 	MACAddress     string    `json:"mac_address"`     // MAC地址
 	NetworkInterface string  `json:"network_interface"` // 网络接口
 	
@@ -49,7 +49,7 @@ type Printer struct {
 	PortInfo       string `json:"port_info"`        // 端口信息
 	
 	// 网络信息
-	IPAddress     string `json:"ip_address"`        // IP地址
+	IPAddress     *string `json:"ip_address"`        // IP地址 (修复：改为指针类型以处理NULL)
 	MACAddress    string `json:"mac_address"`       // MAC地址
 	NetworkConfig string `json:"network_config"`    // 网络配置
 	

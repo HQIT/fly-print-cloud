@@ -43,11 +43,15 @@ func main() {
 
 	// 初始化服务
 	userRepo := database.NewUserRepository(db)
+	edgeNodeRepo := database.NewEdgeNodeRepository(db)
+	printerRepo := database.NewPrinterRepository(db)
 	authService := auth.NewService(&cfg.JWT)
 
 	// 初始化处理器
 	authHandler := handlers.NewAuthHandler(userRepo, authService)
 	userHandler := handlers.NewUserHandler(userRepo)
+	edgeNodeHandler := handlers.NewEdgeNodeHandler(edgeNodeRepo)
+	printerHandler := handlers.NewPrinterHandler(printerRepo, edgeNodeRepo)
 
 	// 创建Gin路由
 	r := gin.New()
@@ -58,7 +62,7 @@ func main() {
 	r.Use(middleware.CORSMiddleware())
 
 	// 设置路由
-	setupRoutes(r, authHandler, userHandler, authService, userRepo)
+	setupRoutes(r, authHandler, userHandler, edgeNodeHandler, printerHandler, authService, userRepo)
 
 	// 启动服务器
 	serverAddr := cfg.Server.GetServerAddr()
@@ -70,7 +74,7 @@ func main() {
 	}
 }
 
-func setupRoutes(r *gin.Engine, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, authService *auth.Service, userRepo *database.UserRepository) {
+func setupRoutes(r *gin.Engine, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, edgeNodeHandler *handlers.EdgeNodeHandler, printerHandler *handlers.PrinterHandler, authService *auth.Service, userRepo *database.UserRepository) {
 	// 公开路由
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -105,6 +109,24 @@ func setupRoutes(r *gin.Engine, authHandler *handlers.AuthHandler, userHandler *
 			userGroup.DELETE("/:id", userHandler.DeleteUser)
 			userGroup.PUT("/:id/password", userHandler.ChangePassword)
 		}
+
+		// Edge Node 管理路由 - 需要admin或operator权限
+		edgeNodeGroup := adminGroup.Group("/edge-nodes", middleware.RequireRole("admin", "operator"))
+		{
+			edgeNodeGroup.GET("", edgeNodeHandler.ListEdgeNodes)
+			edgeNodeGroup.GET("/:id", edgeNodeHandler.GetEdgeNode)
+			edgeNodeGroup.PUT("/:id", edgeNodeHandler.UpdateEdgeNode)
+			edgeNodeGroup.DELETE("/:id", edgeNodeHandler.DeleteEdgeNode)
+		}
+
+		// 打印机管理路由 - 需要admin或operator权限
+		printerGroup := adminGroup.Group("/printers", middleware.RequireRole("admin", "operator"))
+		{
+			printerGroup.GET("", printerHandler.ListPrinters)
+			printerGroup.GET("/:id", printerHandler.GetPrinter)
+			printerGroup.PUT("/:id", printerHandler.UpdatePrinter)
+			printerGroup.DELETE("/:id", printerHandler.DeletePrinter)
+		}
 	}
 
 	// API路由组（/api）- 用于对外接口
@@ -122,12 +144,16 @@ func setupRoutes(r *gin.Engine, authHandler *handlers.AuthHandler, userHandler *
 			})
 		})
 
-		// 边缘节点相关API（将来实现）
-		// edge := apiGroup.Group("/edge")
-		// {
-		// 	edge.POST("/register", edgeHandler.Register)
-		// 	edge.POST("/heartbeat", edgeHandler.Heartbeat)
-		// }
+		// Edge 路由组 - 用于Edge Node连接，需要 OAuth2 验证
+		edgeGroup := apiGroup.Group("/edge")
+		{
+			edgeGroup.POST("/register", middleware.OAuth2ResourceServer("edge:register"), edgeNodeHandler.RegisterEdgeNode)
+			edgeGroup.POST("/heartbeat", middleware.OAuth2ResourceServer("edge:heartbeat"), edgeNodeHandler.Heartbeat)
+			
+			// Edge Node 的打印机管理
+			edgeGroup.POST("/:node_id/printers", middleware.OAuth2ResourceServer("edge:printer"), printerHandler.EdgeRegisterPrinter)
+			edgeGroup.GET("/:node_id/printers", middleware.OAuth2ResourceServer("edge:printer"), printerHandler.EdgeListPrinters)
+		}
 	}
 
 	// WebSocket路由（将来实现）
