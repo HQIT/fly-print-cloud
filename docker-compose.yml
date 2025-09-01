@@ -6,8 +6,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "0.0.0.0:${POSTGRES_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -16,8 +14,6 @@ services:
   redis:
     image: dockerpull.pw/library/redis:7-alpine
     container_name: fly-print-redis
-    ports:
-      - "0.0.0.0:${REDIS_PORT}:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -31,13 +27,15 @@ services:
         - GOPROXY=https://goproxy.cn,direct
     container_name: fly-print-api
     environment:
-      - DB_HOST=${POSTGRES_HOST}
-      - DB_PORT=${POSTGRES_PORT}
-      - DB_NAME=${POSTGRES_DB}
-      - DB_USER=${POSTGRES_USER}
-      - DB_PASSWORD=${POSTGRES_PASSWORD}
-      - REDIS_HOST=${REDIS_HOST}
-      - REDIS_PORT=${REDIS_PORT}
+      - FLY_PRINT_DATABASE_HOST=postgres
+      - FLY_PRINT_DATABASE_PORT=5432
+      - FLY_PRINT_DATABASE_DBNAME=${POSTGRES_DB}
+      - FLY_PRINT_DATABASE_USER=${POSTGRES_USER}
+      - FLY_PRINT_DATABASE_PASSWORD=${POSTGRES_PASSWORD}
+      - FLY_PRINT_REDIS_HOST=redis
+      - FLY_PRINT_REDIS_PORT=6379
+      - CREATE_DEFAULT_ADMIN=${CREATE_DEFAULT_ADMIN:-false}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
     depends_on:
       - postgres
       - redis
