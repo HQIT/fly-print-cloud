@@ -88,7 +88,6 @@ type PrintJob struct {
 	
 	// 关联信息
 	PrinterID    string    `json:"printer_id"`
-	EdgeNodeID   string    `json:"edge_node_id"`
 	UserID       string    `json:"user_id"`       // 提交用户
 	UserName     string    `json:"user_name"`     // 提交用户名
 	

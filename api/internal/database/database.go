@@ -191,7 +191,6 @@ func (db *DB) InitTables() error {
 		
 		-- 关联信息
 		printer_id UUID REFERENCES printers(id) ON DELETE CASCADE,
-		edge_node_id VARCHAR(100) REFERENCES edge_nodes(id) ON DELETE CASCADE,
 		user_id UUID REFERENCES users(id) ON DELETE SET NULL,
 		user_name VARCHAR(100),
 		

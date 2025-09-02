@@ -45,6 +45,7 @@ func main() {
 	userRepo := database.NewUserRepository(db)
 	edgeNodeRepo := database.NewEdgeNodeRepository(db)
 	printerRepo := database.NewPrinterRepository(db)
+	printJobRepo := database.NewPrintJobRepository(db)
 	authService := auth.NewService(&cfg.JWT)
 
 	// 初始化处理器
@@ -52,6 +53,7 @@ func main() {
 	userHandler := handlers.NewUserHandler(userRepo)
 	edgeNodeHandler := handlers.NewEdgeNodeHandler(edgeNodeRepo)
 	printerHandler := handlers.NewPrinterHandler(printerRepo, edgeNodeRepo)
+	printJobHandler := handlers.NewPrintJobHandler(printJobRepo)
 
 	// 创建Gin路由
 	r := gin.New()
@@ -62,7 +64,7 @@ func main() {
 	r.Use(middleware.CORSMiddleware())
 
 	// 设置路由
-	setupRoutes(r, authHandler, userHandler, edgeNodeHandler, printerHandler, authService, userRepo)
+	setupRoutes(r, authHandler, userHandler, edgeNodeHandler, printerHandler, printJobHandler, authService, userRepo)
 
 	// 启动服务器
 	serverAddr := cfg.Server.GetServerAddr()
@@ -74,7 +76,7 @@ func main() {
 	}
 }
 
-func setupRoutes(r *gin.Engine, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, edgeNodeHandler *handlers.EdgeNodeHandler, printerHandler *handlers.PrinterHandler, authService *auth.Service, userRepo *database.UserRepository) {
+func setupRoutes(r *gin.Engine, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, edgeNodeHandler *handlers.EdgeNodeHandler, printerHandler *handlers.PrinterHandler, printJobHandler *handlers.PrintJobHandler, authService *auth.Service, userRepo *database.UserRepository) {
 	// 公开路由
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -126,6 +128,18 @@ func setupRoutes(r *gin.Engine, authHandler *handlers.AuthHandler, userHandler *
 			printerGroup.GET("/:id", printerHandler.GetPrinter)
 			printerGroup.PUT("/:id", printerHandler.UpdatePrinter)
 			printerGroup.DELETE("/:id", printerHandler.DeletePrinter)
+		}
+
+		// 打印任务管理路由 - 需要认证，所有角色都可以访问
+		printJobGroup := adminGroup.Group("/print-jobs")
+		{
+			printJobGroup.POST("", printJobHandler.CreatePrintJob)
+			printJobGroup.GET("", printJobHandler.ListPrintJobs)
+			printJobGroup.GET("/:id", printJobHandler.GetPrintJob)
+			printJobGroup.PUT("/:id", printJobHandler.UpdatePrintJob)
+			printJobGroup.DELETE("/:id", printJobHandler.DeletePrintJob)
+			printJobGroup.POST("/:id/cancel", printJobHandler.CancelPrintJob)
+			printJobGroup.POST("/:id/retry", printJobHandler.RetryPrintJob)
 		}
 	}
 
