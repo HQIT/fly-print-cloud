@@ -49,7 +49,7 @@ func main() {
 	edgeNodeHandler := handlers.NewEdgeNodeHandler(edgeNodeRepo)
 	printerHandler := handlers.NewPrinterHandler(printerRepo, edgeNodeRepo)
 	printJobHandler := handlers.NewPrintJobHandler(printJobRepo)
-	oauth2Handler := handlers.NewOAuth2Handler(&cfg.OAuth2, &cfg.Admin)
+	oauth2Handler := handlers.NewOAuth2Handler(&cfg.OAuth2, &cfg.Admin, userRepo)
 
 	// 初始化 WebSocket 管理器
 	wsManager := websocket.NewConnectionManager()
@@ -132,8 +132,8 @@ func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandl
 				userGroup.PUT("/:id/password", userHandler.ChangePassword)
 			}
 			
-			// 当前用户业务信息 - 任何管理员都可以访问自己的档案
-			adminGroup.GET("/profile", userHandler.GetCurrentUserProfile)
+			// 当前用户业务信息 - 任何认证用户都可以访问自己的档案
+			adminGroup.GET("/profile", middleware.OAuth2ResourceServer(), userHandler.GetCurrentUserProfile)
 
 			// Edge Node 管理路由 - 需要 admin 或 operator 权限
 			edgeNodeGroup := adminGroup.Group("/edge-nodes", middleware.OAuth2ResourceServer("fly-print-admin", "fly-print-operator"))

@@ -7,22 +7,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"fly-print-cloud/api/internal/config"
+	"fly-print-cloud/api/internal/database"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2"
 )
 
 // OAuth2Handler OAuth2 认证处理器
 type OAuth2Handler struct {
-	config          *oauth2.Config
-	userInfoURL     string
-	adminConsoleURL string
+	config                  *oauth2.Config
+	userInfoURL             string
+	adminConsoleURL         string
+	logoutURL               string
+	logoutRedirectURIParam  string
+	userRepo                *database.UserRepository
 }
 
 // NewOAuth2Handler 创建 OAuth2 处理器
-func NewOAuth2Handler(oauth2Cfg *config.OAuth2Config, adminCfg *config.AdminConfig) *OAuth2Handler {
+func NewOAuth2Handler(oauth2Cfg *config.OAuth2Config, adminCfg *config.AdminConfig, userRepo *database.UserRepository) *OAuth2Handler {
 	// 如果 OAuth2 配置为空，创建一个基本的处理器
 	if oauth2Cfg.ClientID == "" || oauth2Cfg.AuthURL == "" || oauth2Cfg.TokenURL == "" {
 		return &OAuth2Handler{
@@ -42,9 +47,12 @@ func NewOAuth2Handler(oauth2Cfg *config.OAuth2Config, adminCfg *config.AdminConf
 	}
 
 	return &OAuth2Handler{
-		config:          oauth2Config,
-		userInfoURL:     oauth2Cfg.UserInfoURL,
-		adminConsoleURL: adminCfg.ConsoleURL,
+		config:                  oauth2Config,
+		userInfoURL:             oauth2Cfg.UserInfoURL,
+		adminConsoleURL:         adminCfg.ConsoleURL,
+		logoutURL:               oauth2Cfg.LogoutURL,
+		logoutRedirectURIParam:  oauth2Cfg.LogoutRedirectURIParam,
+		userRepo:                userRepo,
 	}
 }
 
@@ -105,6 +113,18 @@ func (h *OAuth2Handler) Callback(c *gin.Context) {
 	if token.RefreshToken != "" {
 		c.SetCookie("refresh_token", token.RefreshToken, 7*24*3600, "/", "", false, true) // 7天
 	}
+	
+	// 保存 ID Token 用于登出
+	if idToken := token.Extra("id_token"); idToken != nil {
+		if idTokenStr, ok := idToken.(string); ok {
+			c.SetCookie("id_token", idTokenStr, int(time.Until(token.Expiry).Seconds()), "/", "", false, true)
+		}
+	}
+
+	// 获取用户信息并同步到本地数据库
+	if h.userRepo != nil {
+		h.syncUserOnLogin(token.AccessToken)
+	}
 
 	// 重定向到管理控制台首页
 	c.Redirect(http.StatusFound, h.adminConsoleURL)
@@ -119,6 +139,34 @@ type OAuth2UserInfo struct {
 	RealmAccess       struct {
 		Roles []string `json:"roles"`
 	} `json:"realm_access"`
+}
+
+// syncUserOnLogin 登录时同步用户信息到本地数据库
+func (h *OAuth2Handler) syncUserOnLogin(accessToken string) {
+	// 获取用户信息
+	userInfo, err := h.fetchOAuth2UserInfo(accessToken)
+	if err != nil {
+		// 同步失败不影响登录流程，只记录错误
+		fmt.Printf("用户同步失败: %v\n", err)
+		return
+	}
+
+	// 检查用户是否已存在
+	_, err = h.userRepo.GetUserByExternalID(userInfo.Sub)
+	if err == nil {
+		// 用户已存在，无需创建
+		return
+	}
+
+	// 创建新用户
+	_, err = h.userRepo.CreateUserFromOAuth2(
+		userInfo.Sub,
+		userInfo.PreferredUsername,
+		userInfo.Email,
+	)
+	if err != nil {
+		fmt.Printf("创建用户失败: %v\n", err)
+	}
 }
 
 // Me 获取当前用户认证信息
@@ -201,12 +249,35 @@ func (h *OAuth2Handler) Verify(c *gin.Context) {
 
 // Logout 登出
 func (h *OAuth2Handler) Logout(c *gin.Context) {
+	// 获取 ID Token 用于登出
+	idToken, _ := c.Cookie("id_token")
+	
 	// 清除所有认证相关的 cookies
 	c.SetCookie("access_token", "", -1, "/", "", false, true)
 	c.SetCookie("refresh_token", "", -1, "/", "", false, true)
+	c.SetCookie("id_token", "", -1, "/", "", false, true)
 	
-	SuccessResponse(c, gin.H{"message": "登出成功"})
+	// 如果没有配置登出 URL，只做本地登出
+	if h.logoutURL == "" {
+		SuccessResponse(c, gin.H{"message": "登出成功"})
+		return
+	}
+	
+	// 构建 OAuth2 提供商登出 URL
+	redirectURI := url.QueryEscape(h.adminConsoleURL)
+	fullLogoutURL := fmt.Sprintf("%s?%s=%s", h.logoutURL, h.logoutRedirectURIParam, redirectURI)
+	
+	// 添加 id_token_hint（如果可用）
+	if idToken != "" {
+		idTokenEncoded := url.QueryEscape(idToken)
+		fullLogoutURL += fmt.Sprintf("&id_token_hint=%s", idTokenEncoded)
+	}
+	
+	// 重定向到 OAuth2 提供商登出页面
+	c.Redirect(http.StatusFound, fullLogoutURL)
 }
+
+
 
 // generateRandomState 生成随机 state 参数
 func generateRandomState() string {

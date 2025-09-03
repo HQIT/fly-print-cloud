@@ -53,12 +53,14 @@ type ServerConfig struct {
 
 // OAuth2Config OAuth2配置
 type OAuth2Config struct {
-	ClientID        string `mapstructure:"client_id"`
-	ClientSecret    string `mapstructure:"client_secret"`
-	AuthURL         string `mapstructure:"auth_url"`
-	TokenURL        string `mapstructure:"token_url"`
-	UserInfoURL     string `mapstructure:"userinfo_url"`
-	RedirectURI     string `mapstructure:"redirect_uri"`
+	ClientID                string `mapstructure:"client_id"`
+	ClientSecret            string `mapstructure:"client_secret"`
+	AuthURL                 string `mapstructure:"auth_url"`
+	TokenURL                string `mapstructure:"token_url"`
+	UserInfoURL             string `mapstructure:"userinfo_url"`
+	RedirectURI             string `mapstructure:"redirect_uri"`
+	LogoutURL               string `mapstructure:"logout_url"`
+	LogoutRedirectURIParam  string `mapstructure:"logout_redirect_uri_param"`
 }
 
 // AdminConfig 管理控制台配置
@@ -136,6 +138,8 @@ func setDefaults() {
 	viper.SetDefault("oauth2.token_url", "")
 	viper.SetDefault("oauth2.userinfo_url", "")
 	viper.SetDefault("oauth2.redirect_uri", "")
+	viper.SetDefault("oauth2.logout_url", "")
+	viper.SetDefault("oauth2.logout_redirect_uri_param", "post_logout_redirect_uri")
 	viper.SetDefault("admin.console_url", "http://localhost:3000")
 
 	// Admin 创建配置

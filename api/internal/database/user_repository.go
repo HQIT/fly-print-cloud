@@ -273,24 +273,26 @@ func (r *UserRepository) GetUserByExternalID(externalID string) (*models.User, e
 // CreateUserFromOAuth2 从OAuth2信息创建用户
 func (r *UserRepository) CreateUserFromOAuth2(externalID, username, email string) (*models.User, error) {
 	query := `
-		INSERT INTO users (username, email, external_id, role, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO users (username, email, external_id, password_hash, role, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id`
 	
 	user := &models.User{
-		Username:   username,
-		Email:      email,
-		ExternalID: &externalID,
-		Role:       "admin",
-		Status:     "active",
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		Username:     username,
+		Email:        email,
+		ExternalID:   &externalID,
+		PasswordHash: "oauth2_user", // OAuth2 用户的占位符密码哈希
+		Role:         "admin",
+		Status:       "active",
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 	
 	err := r.db.QueryRow(query,
 		user.Username,
 		user.Email,
 		user.ExternalID,
+		user.PasswordHash,
 		user.Role,
 		user.Status,
 		user.CreatedAt,
