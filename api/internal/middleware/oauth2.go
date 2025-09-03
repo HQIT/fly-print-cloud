@@ -10,6 +10,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// OAuth2TokenInfo OAuth2 token 信息
+type OAuth2TokenInfo struct {
+	Sub               string   `json:"sub"`
+	PreferredUsername string   `json:"preferred_username"`
+	Email             string   `json:"email"`
+	Groups            []string `json:"groups,omitempty"`           // OIDC 标准 groups claim
+	Roles             []string `json:"roles,omitempty"`            // 常见 roles claim
+	Scope             string   `json:"scope,omitempty"`            // OAuth2 标准 scope
+	RealmAccess       struct {
+		Roles []string `json:"roles"`
+	} `json:"realm_access,omitempty"`                              // Keycloak realm roles
+	ResourceAccess    map[string]struct {
+		Roles []string `json:"roles"`
+	} `json:"resource_access,omitempty"`                           // Keycloak client roles
+}
+
 // OAuth2ResourceServer OAuth2 资源服务器中间件
 // 验证 Bearer token 和 scope 权限
 func OAuth2ResourceServer(requiredScopes ...string) gin.HandlerFunc {
@@ -46,8 +62,22 @@ func OAuth2ResourceServer(requiredScopes ...string) gin.HandlerFunc {
 			return
 		}
 
-		// 验证 token 和 scope
-		if !validateTokenAndScopes(token, requiredScopes) {
+		// 验证 token 有效性
+		tokenInfo, err := validateOAuth2Token(token)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error":             "invalid_token",
+				"error_description": err.Error(),
+			})
+			c.Abort()
+			return
+		}
+
+		// 提取标准化角色
+		userRoles := extractStandardRoles(tokenInfo)
+		
+		// 验证权限
+		if !validateScopes(userRoles, requiredScopes) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":             "insufficient_scope",
 				"error_description": "token does not have required scopes",
@@ -56,65 +86,114 @@ func OAuth2ResourceServer(requiredScopes ...string) gin.HandlerFunc {
 			return
 		}
 
-		// 将 token 信息存储到 context 中
+		// 将用户信息存储到 context 中
 		c.Set("oauth2_token", token)
-		c.Set("oauth2_scopes", extractScopesFromToken(token))
+		c.Set("external_id", tokenInfo.Sub)
+		c.Set("username", tokenInfo.PreferredUsername)
+		c.Set("email", tokenInfo.Email)
+		c.Set("roles", userRoles)
 		
 		c.Next()
 	}
 }
 
-// validateTokenAndScopes 验证 token 是否有效且包含所需的 scope
-func validateTokenAndScopes(token string, requiredScopes []string) bool {
-	// TODO: 这里需要根据实际的 OAuth2 Server 实现具体的验证逻辑
-	// 可能的实现方式：
-	// 1. 如果是 JWT token，解析并验证签名和 scope
-	// 2. 如果需要远程验证，调用 OAuth2 Server 的 introspection 端点
-	// 3. 如果有本地缓存，检查缓存中的 token 信息
-	
-	// 暂时的简单实现：检查 token 格式和长度
-	if len(token) < 10 {
-		return false
+// validateOAuth2Token 验证 OAuth2 token 有效性
+func validateOAuth2Token(token string) (*OAuth2TokenInfo, error) {
+	// 从配置中获取 UserInfo URL
+	userInfoURL := config.GetOAuth2UserInfoURL()
+	if userInfoURL == "" {
+		return nil, fmt.Errorf("OAuth2 UserInfo URL not configured")
 	}
 
-	// 提取 token 中的 scope（这里需要根据实际 token 格式实现）
-	tokenScopes := extractScopesFromToken(token)
+	// 创建请求
+	req, err := http.NewRequest("GET", userInfoURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create userinfo request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	// 发送请求
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("userinfo request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("invalid token: userinfo returned %d", resp.StatusCode)
+	}
+
+	// 解析响应
+	var tokenInfo OAuth2TokenInfo
+	if err := json.NewDecoder(resp.Body).Decode(&tokenInfo); err != nil {
+		return nil, fmt.Errorf("failed to decode userinfo: %w", err)
+	}
+
+	return &tokenInfo, nil
+}
+
+// extractStandardRoles 从多个标准位置提取用户角色
+func extractStandardRoles(tokenInfo *OAuth2TokenInfo) []string {
+	var allRoles []string
 	
-	// 检查是否包含所有必需的 scope
+	// 1. OIDC 标准 groups claim
+	allRoles = append(allRoles, tokenInfo.Groups...)
+	
+	// 2. 常见 roles claim  
+	allRoles = append(allRoles, tokenInfo.Roles...)
+	
+	// 3. Keycloak realm roles
+	allRoles = append(allRoles, tokenInfo.RealmAccess.Roles...)
+	
+	// 4. Keycloak client roles (从所有客户端)
+	for _, clientAccess := range tokenInfo.ResourceAccess {
+		allRoles = append(allRoles, clientAccess.Roles...)
+	}
+	
+	// 5. OAuth2 scope 转换为角色
+	if tokenInfo.Scope != "" {
+		scopeRoles := strings.Fields(tokenInfo.Scope)
+		allRoles = append(allRoles, scopeRoles...)
+	}
+	
+	// 去重
+	return removeDuplicates(allRoles)
+}
+
+// validateScopes 验证用户角色是否满足权限要求
+func validateScopes(userRoles []string, requiredScopes []string) bool {
+	// 如果没有要求特定权限，只要有任何角色就允许
+	if len(requiredScopes) == 0 {
+		return len(userRoles) > 0
+	}
+	
+	// admin 角色拥有所有权限
+	if contains(userRoles, "admin") {
+		return true
+	}
+	
+	// 检查是否包含所有必需的权限
 	for _, requiredScope := range requiredScopes {
-		if !contains(tokenScopes, requiredScope) {
+		if !contains(userRoles, requiredScope) {
 			return false
 		}
 	}
-
 	return true
 }
 
-// extractScopesFromToken 从 token 中提取 scope 信息
-func extractScopesFromToken(token string) []string {
-	// TODO: 根据实际的 token 格式实现
-	// 如果是 JWT，解析 payload 中的 scope 字段
-	// 如果是 opaque token，可能需要调用 introspection 端点
+// removeDuplicates 去除重复的角色
+func removeDuplicates(roles []string) []string {
+	keys := make(map[string]bool)
+	var result []string
 	
-	// 暂时的测试实现：根据 token 返回不同的 scope
-	testTokenScopes := map[string][]string{
-		"test-edge-token-with-sufficient-length": {
-			"edge:register", "edge:heartbeat", "edge:printer",
-		},
-		"test-admin-token-with-sufficient-length": {
-			"admin:users", "admin:edge-nodes", "admin:printers", "admin:print-jobs",
-		},
-		"test-operator-token-with-sufficient-length": {
-			"admin:edge-nodes", "admin:printers", "admin:print-jobs",
-		},
+	for _, role := range roles {
+		if role != "" && !keys[role] {
+			keys[role] = true
+			result = append(result, role)
+		}
 	}
-	
-	if scopes, exists := testTokenScopes[token]; exists {
-		return scopes
-	}
-	
-	// 默认返回空 scope
-	return []string{}
+	return result
 }
 
 // contains 检查 slice 中是否包含指定的字符串

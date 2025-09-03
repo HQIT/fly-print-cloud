@@ -60,7 +60,7 @@ func (h *PrintJobHandler) CreatePrintJob(c *gin.Context) {
 		return
 	}
 
-	// 从JWT token中获取用户信息
+	// 从OAuth2认证中获取用户信息
 	userID, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})

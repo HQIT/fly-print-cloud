@@ -85,18 +85,8 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		return
 	}
 
-	// 转换为响应格式
-	userInfos := make([]UserInfo, len(users))
-	for i, user := range users {
-		userInfos[i] = UserInfo{
-			ID:       user.ID,
-			Username: user.Username,
-			Email:    user.Email,
-			Role:     user.Role,
-		}
-	}
-
-	PaginatedSuccessResponse(c, userInfos, total, page, pageSize)
+	// 直接返回用户列表（敏感字段已通过 json:"-" 过滤）
+	PaginatedSuccessResponse(c, users, total, page, pageSize)
 }
 
 // CreateUser 创建用户
@@ -147,16 +137,9 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// 返回用户信息（不包含密码）
-	userInfo := UserInfo{
-		ID:       user.ID,
-		Username: user.Username,
-		Email:    user.Email,
-		Role:     user.Role,
-	}
-
 	log.Printf("User %s created successfully by admin", user.Username)
-	CreatedResponse(c, userInfo)
+	// 直接返回用户信息（敏感字段已过滤）
+	CreatedResponse(c, user)
 }
 
 // GetUser 获取用户详情
@@ -173,14 +156,8 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 		return
 	}
 
-	userInfo := UserInfo{
-		ID:       user.ID,
-		Username: user.Username,
-		Email:    user.Email,
-		Role:     user.Role,
-	}
-
-	SuccessResponse(c, userInfo)
+	// 直接返回用户信息（敏感字段已过滤）
+	SuccessResponse(c, user)
 }
 
 // UpdateUser 更新用户
@@ -240,7 +217,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		return
 	}
 
-	userInfo := UserInfo{
+	userInfo := models.User{
 		ID:       user.ID,
 		Username: user.Username,
 		Email:    user.Email,

@@ -99,7 +99,8 @@ func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandl
 		authGroup.GET("/callback", oauth2Handler.Callback)
 		authGroup.GET("/me", oauth2Handler.Me)
 		authGroup.GET("/verify", oauth2Handler.Verify)  // Nginx auth_request 使用
-		authGroup.POST("/logout", oauth2Handler.Logout)
+		authGroup.GET("/logout", oauth2Handler.Logout)   // 支持 GET 请求登出
+		authGroup.POST("/logout", oauth2Handler.Logout)  // 保留 POST 支持
 	}
 
 	// 统一 API 路由组（/api/v1）- OAuth2 Resource Server
@@ -120,8 +121,8 @@ func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandl
 		// Admin Console API - 需要 admin:* scope
 		adminGroup := apiV1Group.Group("/admin")
 		{
-			// 用户管理路由 - 需要 admin:users scope
-			userGroup := adminGroup.Group("/users", middleware.OAuth2ResourceServer("admin:users"))
+			// 用户管理路由 - 需要 admin 权限
+			userGroup := adminGroup.Group("/users", middleware.OAuth2ResourceServer("fly-print-admin"))
 			{
 				userGroup.GET("", userHandler.ListUsers)
 				userGroup.POST("", userHandler.CreateUser)
@@ -134,8 +135,8 @@ func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandl
 			// 当前用户业务信息 - 任何管理员都可以访问自己的档案
 			adminGroup.GET("/profile", userHandler.GetCurrentUserProfile)
 
-			// Edge Node 管理路由 - 需要 admin:edge-nodes scope
-			edgeNodeGroup := adminGroup.Group("/edge-nodes", middleware.OAuth2ResourceServer("admin:edge-nodes"))
+			// Edge Node 管理路由 - 需要 admin 或 operator 权限
+			edgeNodeGroup := adminGroup.Group("/edge-nodes", middleware.OAuth2ResourceServer("fly-print-admin", "fly-print-operator"))
 			{
 				edgeNodeGroup.GET("", edgeNodeHandler.ListEdgeNodes)
 				edgeNodeGroup.GET("/:id", edgeNodeHandler.GetEdgeNode)
@@ -143,8 +144,8 @@ func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandl
 				edgeNodeGroup.DELETE("/:id", edgeNodeHandler.DeleteEdgeNode)
 			}
 
-			// 打印机管理路由 - 需要 admin:printers scope
-			printerGroup := adminGroup.Group("/printers", middleware.OAuth2ResourceServer("admin:printers"))
+			// 打印机管理路由 - 需要 admin 或 operator 权限
+			printerGroup := adminGroup.Group("/printers", middleware.OAuth2ResourceServer("fly-print-admin", "fly-print-operator"))
 			{
 				printerGroup.GET("", printerHandler.ListPrinters)
 				printerGroup.GET("/:id", printerHandler.GetPrinter)
@@ -152,8 +153,8 @@ func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandl
 				printerGroup.DELETE("/:id", printerHandler.DeletePrinter)
 			}
 
-			// 打印任务管理路由 - 需要 admin:print-jobs scope
-			printJobGroup := adminGroup.Group("/print-jobs", middleware.OAuth2ResourceServer("admin:print-jobs"))
+			// 打印任务管理路由 - 需要 admin 或 operator 权限
+			printJobGroup := adminGroup.Group("/print-jobs", middleware.OAuth2ResourceServer("fly-print-admin", "fly-print-operator"))
 			{
 				printJobGroup.POST("", printJobHandler.CreatePrintJob)
 				printJobGroup.GET("", printJobHandler.ListPrintJobs)

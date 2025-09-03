@@ -12,7 +12,7 @@ type Config struct {
 	App      AppConfig      `mapstructure:"app"`
 	Database DatabaseConfig `mapstructure:"database"`
 	Redis    RedisConfig    `mapstructure:"redis"`
-	JWT      JWTConfig      `mapstructure:"jwt"`
+
 	Server   ServerConfig   `mapstructure:"server"`
 	OAuth2   OAuth2Config   `mapstructure:"oauth2"`
 	Admin    AdminConfig    `mapstructure:"admin"`
@@ -44,12 +44,6 @@ type RedisConfig struct {
 	DB       int    `mapstructure:"db"`
 }
 
-// JWTConfig JWT配置
-type JWTConfig struct {
-	Secret         string `mapstructure:"secret"`
-	ExpirationTime int    `mapstructure:"expiration_time"` // 小时
-	RefreshTime    int    `mapstructure:"refresh_time"`    // 小时
-}
 
 // ServerConfig 服务器配置
 type ServerConfig struct {
@@ -104,6 +98,11 @@ func Load() (*Config, error) {
 	return &config, nil
 }
 
+// GetOAuth2UserInfoURL 获取 OAuth2 UserInfo URL
+func GetOAuth2UserInfoURL() string {
+	return viper.GetString("oauth2.userinfo_url")
+}
+
 // setDefaults 设置默认配置值
 func setDefaults() {
 	// App 默认值
@@ -126,11 +125,6 @@ func setDefaults() {
 	viper.SetDefault("redis.password", "")
 	viper.SetDefault("redis.db", 0)
 
-	// JWT 默认值
-	viper.SetDefault("jwt.secret", "fly-print-cloud-secret-key-change-in-production")
-	viper.SetDefault("jwt.expiration_time", 24)  // 24小时
-	viper.SetDefault("jwt.refresh_time", 168)    // 7天
-
 	// Server 默认值
 	viper.SetDefault("server.host", "0.0.0.0")
 	viper.SetDefault("server.port", 8080)
@@ -142,7 +136,7 @@ func setDefaults() {
 	viper.SetDefault("oauth2.token_url", "")
 	viper.SetDefault("oauth2.userinfo_url", "")
 	viper.SetDefault("oauth2.redirect_uri", "")
-	viper.SetDefault("admin_console_url", "http://localhost:3000")
+	viper.SetDefault("admin.console_url", "http://localhost:3000")
 
 	// Admin 创建配置
 	viper.SetDefault("create_default_admin", "false")
