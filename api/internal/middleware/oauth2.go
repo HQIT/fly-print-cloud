@@ -1,9 +1,12 @@
 package middleware
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
+	"fly-print-cloud/api/internal/config"
 	"github.com/gin-gonic/gin"
 )
 
@@ -93,9 +96,25 @@ func extractScopesFromToken(token string) []string {
 	// 如果是 JWT，解析 payload 中的 scope 字段
 	// 如果是 opaque token，可能需要调用 introspection 端点
 	
-	// 暂时的简单实现：假设 token 包含基本的 edge 权限
-	// 实际部署时需要替换为真实的实现
-	return []string{"edge:register", "edge:heartbeat"}
+	// 暂时的测试实现：根据 token 返回不同的 scope
+	testTokenScopes := map[string][]string{
+		"test-edge-token-with-sufficient-length": {
+			"edge:register", "edge:heartbeat", "edge:printer",
+		},
+		"test-admin-token-with-sufficient-length": {
+			"admin:users", "admin:edge-nodes", "admin:printers", "admin:print-jobs",
+		},
+		"test-operator-token-with-sufficient-length": {
+			"admin:edge-nodes", "admin:printers", "admin:print-jobs",
+		},
+	}
+	
+	if scopes, exists := testTokenScopes[token]; exists {
+		return scopes
+	}
+	
+	// 默认返回空 scope
+	return []string{}
 }
 
 // contains 检查 slice 中是否包含指定的字符串

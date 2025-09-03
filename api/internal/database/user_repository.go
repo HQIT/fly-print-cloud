@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"fly-print-cloud/api/internal/models"
 	"golang.org/x/crypto/bcrypt"
@@ -233,4 +234,72 @@ func (r *UserRepository) UsernameExists(username string, excludeUserID ...string
 	}
 
 	return count > 0, nil
+}
+
+// GetUserByExternalID 通过外部ID获取用户
+func (r *UserRepository) GetUserByExternalID(externalID string) (*models.User, error) {
+	query := `
+		SELECT id, username, email, password_hash, external_id, role, status, last_login, created_at, updated_at
+		FROM users 
+		WHERE external_id = $1`
+	
+	var user models.User
+	var externalIDPtr sql.NullString
+	
+	err := r.db.QueryRow(query, externalID).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.PasswordHash,
+		&externalIDPtr,
+		&user.Role,
+		&user.Status,
+		&user.LastLogin,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	if externalIDPtr.Valid {
+		user.ExternalID = &externalIDPtr.String
+	}
+	
+	return &user, nil
+}
+
+// CreateUserFromOAuth2 从OAuth2信息创建用户
+func (r *UserRepository) CreateUserFromOAuth2(externalID, username, email string) (*models.User, error) {
+	query := `
+		INSERT INTO users (username, email, external_id, role, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id`
+	
+	user := &models.User{
+		Username:   username,
+		Email:      email,
+		ExternalID: &externalID,
+		Role:       "admin",
+		Status:     "active",
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	
+	err := r.db.QueryRow(query,
+		user.Username,
+		user.Email,
+		user.ExternalID,
+		user.Role,
+		user.Status,
+		user.CreatedAt,
+		user.UpdatedAt,
+	).Scan(&user.ID)
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	return user, nil
 }

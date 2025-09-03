@@ -43,6 +43,25 @@ type ChangePasswordRequest struct {
 	NewPassword string `json:"new_password" binding:"required,min=6"`
 }
 
+// GetCurrentUserProfile 获取当前用户业务信息
+func (h *UserHandler) GetCurrentUserProfile(c *gin.Context) {
+	// 从认证中间件获取 external_id
+	externalID, exists := c.Get("external_id")
+	if !exists {
+		UnauthorizedResponse(c, "未认证")
+		return
+	}
+
+	// 从本地数据库获取用户信息
+	user, err := h.userRepo.GetUserByExternalID(externalID.(string))
+	if err != nil {
+		NotFoundResponse(c, "用户不存在")
+		return
+	}
+
+	SuccessResponse(c, user)
+}
+
 // ListUsers 获取用户列表
 func (h *UserHandler) ListUsers(c *gin.Context) {
 	// 获取分页参数

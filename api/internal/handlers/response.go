@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
 // Response 通用API响应结构
@@ -42,6 +44,35 @@ func ErrorResponse(c *gin.Context, code int, message string) {
 // BadRequestResponse 请求错误响应
 func BadRequestResponse(c *gin.Context, message string) {
 	ErrorResponse(c, http.StatusBadRequest, message)
+}
+
+// ValidationErrorResponse 字段验证错误响应
+func ValidationErrorResponse(c *gin.Context, err error) {
+	if validationErrors, ok := err.(validator.ValidationErrors); ok {
+		var errors []string
+		for _, fieldError := range validationErrors {
+			errors = append(errors, getFieldErrorMessage(fieldError))
+		}
+		ErrorResponse(c, http.StatusBadRequest, "字段验证失败: "+strings.Join(errors, ", "))
+	} else {
+		BadRequestResponse(c, "请求参数无效")
+	}
+}
+
+// getFieldErrorMessage 获取字段错误信息
+func getFieldErrorMessage(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return fe.Field() + " 是必填字段"
+	case "email":
+		return fe.Field() + " 必须是有效的邮箱地址"
+	case "min":
+		return fe.Field() + " 长度不能少于 " + fe.Param() + " 个字符"
+	case "max":
+		return fe.Field() + " 长度不能超过 " + fe.Param() + " 个字符"
+	default:
+		return fe.Field() + " 格式不正确"
+	}
 }
 
 // UnauthorizedResponse 未授权响应

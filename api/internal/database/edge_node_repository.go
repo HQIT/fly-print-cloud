@@ -58,8 +58,8 @@ func (r *EdgeNodeRepository) GetEdgeNodeByID(id string) (*models.EdgeNode, error
 			   ip_address, mac_address, network_interface,
 			   os_version, cpu_info, memory_info, disk_info,
 			   connection_quality, latency,
-			   created_at, updated_at
-		FROM edge_nodes WHERE id = $1`
+			   created_at, updated_at, deleted_at
+		FROM edge_nodes WHERE id = $1 AND deleted_at IS NULL`
 
 	var lastHeartbeat sql.NullTime
 	var latitude, longitude sql.NullFloat64
@@ -68,6 +68,7 @@ func (r *EdgeNodeRepository) GetEdgeNodeByID(id string) (*models.EdgeNode, error
 	var connectionQuality sql.NullString
 	var latency sql.NullInt32
 	var version sql.NullString
+	var deletedAt sql.NullTime
 
 	err := r.db.QueryRow(query, id).Scan(
 		&node.ID, &node.Name, &node.Status, &version, &lastHeartbeat,
@@ -75,7 +76,7 @@ func (r *EdgeNodeRepository) GetEdgeNodeByID(id string) (*models.EdgeNode, error
 		&ipAddress, &macAddress, &networkInterface,
 		&osVersion, &cpuInfo, &memoryInfo, &diskInfo,
 		&connectionQuality, &latency,
-		&node.CreatedAt, &node.UpdatedAt,
+		&node.CreatedAt, &node.UpdatedAt, &deletedAt,
 	)
 
 	if err != nil {
@@ -131,6 +132,9 @@ func (r *EdgeNodeRepository) GetEdgeNodeByID(id string) (*models.EdgeNode, error
 	if latency.Valid {
 		node.Latency = int(latency.Int32)
 	}
+	if deletedAt.Valid {
+		node.DeletedAt = &deletedAt.Time
+	}
 
 	return node, nil
 }
@@ -161,13 +165,25 @@ func (r *EdgeNodeRepository) UpdateEdgeNode(node *models.EdgeNode) error {
 	return nil
 }
 
-// DeleteEdgeNode 删除 Edge Node（软删除，实际上是更新状态）
+// DeleteEdgeNode 删除 Edge Node（软删除）
 func (r *EdgeNodeRepository) DeleteEdgeNode(id string) error {
-	query := `UPDATE edge_nodes SET status = 'deleted' WHERE id = $1`
+	query := `UPDATE edge_nodes SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL`
 	
 	_, err := r.db.Exec(query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete edge node: %w", err)
+	}
+
+	return nil
+}
+
+// HardDeleteEdgeNode 硬删除 Edge Node（彻底删除）
+func (r *EdgeNodeRepository) HardDeleteEdgeNode(id string) error {
+	query := `DELETE FROM edge_nodes WHERE id = $1`
+	
+	_, err := r.db.Exec(query, id)
+	if err != nil {
+		return fmt.Errorf("failed to hard delete edge node: %w", err)
 	}
 
 	return nil
@@ -178,7 +194,7 @@ func (r *EdgeNodeRepository) ListEdgeNodes(offset, limit int, status string) ([]
 	var nodes []*models.EdgeNode
 	
 	// 构建查询条件
-	whereClause := "WHERE status != 'deleted'"
+	whereClause := "WHERE deleted_at IS NULL"
 	args := []interface{}{}
 	argIndex := 1
 
@@ -203,7 +219,7 @@ func (r *EdgeNodeRepository) ListEdgeNodes(offset, limit int, status string) ([]
 			   ip_address, mac_address, network_interface,
 			   os_version, cpu_info, memory_info, disk_info,
 			   connection_quality, latency,
-			   created_at, updated_at
+			   created_at, updated_at, deleted_at
 		FROM edge_nodes %s
 		ORDER BY created_at DESC
 		LIMIT $%d OFFSET $%d`, whereClause, argIndex, argIndex+1)
@@ -226,13 +242,14 @@ func (r *EdgeNodeRepository) ListEdgeNodes(offset, limit int, status string) ([]
 		var latency sql.NullInt32
 		var version sql.NullString
 
+		var deletedAt sql.NullTime
 		err := rows.Scan(
 			&node.ID, &node.Name, &node.Status, &version, &lastHeartbeat,
 			&location, &latitude, &longitude,
 			&ipAddress, &macAddress, &networkInterface,
 			&osVersion, &cpuInfo, &memoryInfo, &diskInfo,
 			&connectionQuality, &latency,
-			&node.CreatedAt, &node.UpdatedAt,
+			&node.CreatedAt, &node.UpdatedAt, &deletedAt,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to scan edge node: %w", err)
@@ -283,6 +300,9 @@ func (r *EdgeNodeRepository) ListEdgeNodes(offset, limit int, status string) ([]
 		}
 		if latency.Valid {
 			node.Latency = int(latency.Int32)
+		}
+		if deletedAt.Valid {
+			node.DeletedAt = &deletedAt.Time
 		}
 
 		nodes = append(nodes, node)

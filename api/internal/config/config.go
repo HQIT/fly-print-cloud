@@ -14,6 +14,8 @@ type Config struct {
 	Redis    RedisConfig    `mapstructure:"redis"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Server   ServerConfig   `mapstructure:"server"`
+	OAuth2   OAuth2Config   `mapstructure:"oauth2"`
+	Admin    AdminConfig    `mapstructure:"admin"`
 }
 
 // AppConfig 应用配置
@@ -53,6 +55,21 @@ type JWTConfig struct {
 type ServerConfig struct {
 	Port int    `mapstructure:"port"`
 	Host string `mapstructure:"host"`
+}
+
+// OAuth2Config OAuth2配置
+type OAuth2Config struct {
+	ClientID        string `mapstructure:"client_id"`
+	ClientSecret    string `mapstructure:"client_secret"`
+	AuthURL         string `mapstructure:"auth_url"`
+	TokenURL        string `mapstructure:"token_url"`
+	UserInfoURL     string `mapstructure:"userinfo_url"`
+	RedirectURI     string `mapstructure:"redirect_uri"`
+}
+
+// AdminConfig 管理控制台配置
+type AdminConfig struct {
+	ConsoleURL string `mapstructure:"console_url"`
 }
 
 // Load 加载配置
@@ -117,6 +134,19 @@ func setDefaults() {
 	// Server 默认值
 	viper.SetDefault("server.host", "0.0.0.0")
 	viper.SetDefault("server.port", 8080)
+
+	// OAuth2 默认值
+	viper.SetDefault("oauth2.client_id", "")
+	viper.SetDefault("oauth2.client_secret", "")
+	viper.SetDefault("oauth2.auth_url", "")
+	viper.SetDefault("oauth2.token_url", "")
+	viper.SetDefault("oauth2.userinfo_url", "")
+	viper.SetDefault("oauth2.redirect_uri", "")
+	viper.SetDefault("admin_console_url", "http://localhost:3000")
+
+	// Admin 创建配置
+	viper.SetDefault("create_default_admin", "false")
+	viper.SetDefault("default_admin_password", "")
 }
 
 // GetDSN 获取数据库连接字符串

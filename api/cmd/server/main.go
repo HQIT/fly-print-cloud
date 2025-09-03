@@ -4,7 +4,6 @@ import (
 	"log"
 	"net/http"
 
-	"fly-print-cloud/api/internal/auth"
 	"fly-print-cloud/api/internal/config"
 	"fly-print-cloud/api/internal/database"
 	"fly-print-cloud/api/internal/handlers"
@@ -37,24 +36,20 @@ func main() {
 		log.Fatal("Failed to initialize database tables:", err)
 	}
 
-	// 创建默认管理员账户
-	if err := db.CreateDefaultAdmin(); err != nil {
-		log.Fatal("Failed to create default admin:", err)
-	}
+
 
 	// 初始化服务
 	userRepo := database.NewUserRepository(db)
 	edgeNodeRepo := database.NewEdgeNodeRepository(db)
 	printerRepo := database.NewPrinterRepository(db)
 	printJobRepo := database.NewPrintJobRepository(db)
-	authService := auth.NewService(&cfg.JWT)
 
 	// 初始化处理器
-	authHandler := handlers.NewAuthHandler(userRepo, authService)
 	userHandler := handlers.NewUserHandler(userRepo)
 	edgeNodeHandler := handlers.NewEdgeNodeHandler(edgeNodeRepo)
 	printerHandler := handlers.NewPrinterHandler(printerRepo, edgeNodeRepo)
 	printJobHandler := handlers.NewPrintJobHandler(printJobRepo)
+	oauth2Handler := handlers.NewOAuth2Handler(&cfg.OAuth2, &cfg.Admin)
 
 	// 初始化 WebSocket 管理器
 	wsManager := websocket.NewConnectionManager()
@@ -72,7 +67,7 @@ func main() {
 	r.Use(middleware.CORSMiddleware())
 
 	// 设置路由
-	setupRoutes(r, authHandler, userHandler, edgeNodeHandler, printerHandler, printJobHandler, wsHandler, authService, userRepo)
+	setupRoutes(r, userHandler, edgeNodeHandler, printerHandler, printJobHandler, wsHandler, oauth2Handler)
 
 	// 启动服务器
 	serverAddr := cfg.Server.GetServerAddr()
@@ -84,7 +79,7 @@ func main() {
 	}
 }
 
-func setupRoutes(r *gin.Engine, authHandler *handlers.AuthHandler, userHandler *handlers.UserHandler, edgeNodeHandler *handlers.EdgeNodeHandler, printerHandler *handlers.PrinterHandler, printJobHandler *handlers.PrintJobHandler, wsHandler *websocket.WebSocketHandler, authService *auth.Service, userRepo *database.UserRepository) {
+func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandler *handlers.EdgeNodeHandler, printerHandler *handlers.PrinterHandler, printJobHandler *handlers.PrintJobHandler, wsHandler *websocket.WebSocketHandler, oauth2Handler *handlers.OAuth2Handler) {
 	// 公开路由
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -97,77 +92,81 @@ func setupRoutes(r *gin.Engine, authHandler *handlers.AuthHandler, userHandler *
 		})
 	})
 
-	// 认证路由组（/auth）
+	// OAuth2 认证路由
 	authGroup := r.Group("/auth")
 	{
-		authGroup.POST("/login", authHandler.Login)
-		authGroup.POST("/logout", authHandler.Logout)
-		authGroup.POST("/refresh", authHandler.Refresh)
-		authGroup.GET("/me", middleware.AuthMiddleware(authService, userRepo), authHandler.Me)
+		authGroup.GET("/login", oauth2Handler.Login)
+		authGroup.GET("/callback", oauth2Handler.Callback)
+		authGroup.GET("/me", oauth2Handler.Me)
+		authGroup.GET("/verify", oauth2Handler.Verify)  // Nginx auth_request 使用
+		authGroup.POST("/logout", oauth2Handler.Logout)
 	}
 
-	// 管理路由组（/admin）- 需要认证
-	adminGroup := r.Group("/admin", middleware.AuthMiddleware(authService, userRepo))
+	// 统一 API 路由组（/api/v1）- OAuth2 Resource Server
+	apiV1Group := r.Group("/api/v1")
 	{
-		// 用户管理路由 - 需要admin权限
-		userGroup := adminGroup.Group("/users", middleware.RequireRole("admin"))
-		{
-			userGroup.GET("", userHandler.ListUsers)
-			userGroup.POST("", userHandler.CreateUser)
-			userGroup.GET("/:id", userHandler.GetUser)
-			userGroup.PUT("/:id", userHandler.UpdateUser)
-			userGroup.DELETE("/:id", userHandler.DeleteUser)
-			userGroup.PUT("/:id/password", userHandler.ChangePassword)
-		}
-
-		// Edge Node 管理路由 - 需要admin或operator权限
-		edgeNodeGroup := adminGroup.Group("/edge-nodes", middleware.RequireRole("admin", "operator"))
-		{
-			edgeNodeGroup.GET("", edgeNodeHandler.ListEdgeNodes)
-			edgeNodeGroup.GET("/:id", edgeNodeHandler.GetEdgeNode)
-			edgeNodeGroup.PUT("/:id", edgeNodeHandler.UpdateEdgeNode)
-			edgeNodeGroup.DELETE("/:id", edgeNodeHandler.DeleteEdgeNode)
-		}
-
-		// 打印机管理路由 - 需要admin或operator权限
-		printerGroup := adminGroup.Group("/printers", middleware.RequireRole("admin", "operator"))
-		{
-			printerGroup.GET("", printerHandler.ListPrinters)
-			printerGroup.GET("/:id", printerHandler.GetPrinter)
-			printerGroup.PUT("/:id", printerHandler.UpdatePrinter)
-			printerGroup.DELETE("/:id", printerHandler.DeletePrinter)
-		}
-
-		// 打印任务管理路由 - 需要认证，所有角色都可以访问
-		printJobGroup := adminGroup.Group("/print-jobs")
-		{
-			printJobGroup.POST("", printJobHandler.CreatePrintJob)
-			printJobGroup.GET("", printJobHandler.ListPrintJobs)
-			printJobGroup.GET("/:id", printJobHandler.GetPrintJob)
-			printJobGroup.PUT("/:id", printJobHandler.UpdatePrintJob)
-			printJobGroup.DELETE("/:id", printJobHandler.DeletePrintJob)
-			printJobGroup.POST("/:id/cancel", printJobHandler.CancelPrintJob)
-			printJobGroup.POST("/:id/retry", printJobHandler.RetryPrintJob)
-		}
-	}
-
-	// API路由组（/api）- 用于对外接口
-	apiGroup := r.Group("/api")
-	{
-		apiGroup.GET("/health", func(c *gin.Context) {
+		apiV1Group.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"code":    http.StatusOK,
 				"message": "success",
 				"data": gin.H{
 					"status":  "ok",
 					"service": "fly-print-cloud-api",
-					"version": "0.1.0",
+					"version": "1.0.0",
 				},
 			})
 		})
 
-		// Edge 路由组 - 用于Edge Node连接，需要 OAuth2 验证
-		edgeGroup := apiGroup.Group("/edge")
+		// Admin Console API - 需要 admin:* scope
+		adminGroup := apiV1Group.Group("/admin")
+		{
+			// 用户管理路由 - 需要 admin:users scope
+			userGroup := adminGroup.Group("/users", middleware.OAuth2ResourceServer("admin:users"))
+			{
+				userGroup.GET("", userHandler.ListUsers)
+				userGroup.POST("", userHandler.CreateUser)
+				userGroup.GET("/:id", userHandler.GetUser)
+				userGroup.PUT("/:id", userHandler.UpdateUser)
+				userGroup.DELETE("/:id", userHandler.DeleteUser)
+				userGroup.PUT("/:id/password", userHandler.ChangePassword)
+			}
+			
+			// 当前用户业务信息 - 任何管理员都可以访问自己的档案
+			adminGroup.GET("/profile", userHandler.GetCurrentUserProfile)
+
+			// Edge Node 管理路由 - 需要 admin:edge-nodes scope
+			edgeNodeGroup := adminGroup.Group("/edge-nodes", middleware.OAuth2ResourceServer("admin:edge-nodes"))
+			{
+				edgeNodeGroup.GET("", edgeNodeHandler.ListEdgeNodes)
+				edgeNodeGroup.GET("/:id", edgeNodeHandler.GetEdgeNode)
+				edgeNodeGroup.PUT("/:id", edgeNodeHandler.UpdateEdgeNode)
+				edgeNodeGroup.DELETE("/:id", edgeNodeHandler.DeleteEdgeNode)
+			}
+
+			// 打印机管理路由 - 需要 admin:printers scope
+			printerGroup := adminGroup.Group("/printers", middleware.OAuth2ResourceServer("admin:printers"))
+			{
+				printerGroup.GET("", printerHandler.ListPrinters)
+				printerGroup.GET("/:id", printerHandler.GetPrinter)
+				printerGroup.PUT("/:id", printerHandler.UpdatePrinter)
+				printerGroup.DELETE("/:id", printerHandler.DeletePrinter)
+			}
+
+			// 打印任务管理路由 - 需要 admin:print-jobs scope
+			printJobGroup := adminGroup.Group("/print-jobs", middleware.OAuth2ResourceServer("admin:print-jobs"))
+			{
+				printJobGroup.POST("", printJobHandler.CreatePrintJob)
+				printJobGroup.GET("", printJobHandler.ListPrintJobs)
+				printJobGroup.GET("/:id", printJobHandler.GetPrintJob)
+				printJobGroup.PUT("/:id", printJobHandler.UpdatePrintJob)
+				printJobGroup.DELETE("/:id", printJobHandler.DeletePrintJob)
+				printJobGroup.POST("/:id/cancel", printJobHandler.CancelPrintJob)
+				printJobGroup.POST("/:id/retry", printJobHandler.RetryPrintJob)
+			}
+		}
+
+		// Edge Node API - 需要 edge:* scope
+		edgeGroup := apiV1Group.Group("/edge")
 		{
 			edgeGroup.POST("/register", middleware.OAuth2ResourceServer("edge:register"), edgeNodeHandler.RegisterEdgeNode)
 			edgeGroup.POST("/heartbeat", middleware.OAuth2ResourceServer("edge:heartbeat"), edgeNodeHandler.Heartbeat)
@@ -180,4 +179,6 @@ func setupRoutes(r *gin.Engine, authHandler *handlers.AuthHandler, userHandler *
 			edgeGroup.GET("/ws", wsHandler.HandleConnection)
 		}
 	}
+
+
 }

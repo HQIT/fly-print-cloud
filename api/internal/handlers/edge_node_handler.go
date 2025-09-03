@@ -74,7 +74,7 @@ type EdgeNodeInfo struct {
 func (h *EdgeNodeHandler) RegisterEdgeNode(c *gin.Context) {
 	var req RegisterEdgeNodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequestResponse(c, "请求参数无效")
+		ValidationErrorResponse(c, err)
 		return
 	}
 
@@ -221,7 +221,7 @@ func (h *EdgeNodeHandler) UpdateEdgeNode(c *gin.Context) {
 
 	var req UpdateEdgeNodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequestResponse(c, "请求参数无效")
+		ValidationErrorResponse(c, err)
 		return
 	}
 
@@ -316,7 +316,7 @@ type HeartbeatRequest struct {
 func (h *EdgeNodeHandler) Heartbeat(c *gin.Context) {
 	var req HeartbeatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequestResponse(c, "请求参数无效")
+		ValidationErrorResponse(c, err)
 		return
 	}
 

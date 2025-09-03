@@ -6,11 +6,12 @@ import (
 
 // EdgeNode Edge节点
 type EdgeNode struct {
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	Status          string    `json:"status"` // online/offline
-	Version         string    `json:"version"`
-	LastHeartbeat   time.Time `json:"last_heartbeat"`
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	Status          string     `json:"status"` // online/offline
+	Version         string     `json:"version"`
+	LastHeartbeat   time.Time  `json:"last_heartbeat"`
+	DeletedAt       *time.Time `json:"deleted_at,omitempty"` // 软删除时间
 	
 	// 位置信息
 	Location        string    `json:"location"`        // 地理位置描述
@@ -121,6 +122,7 @@ type User struct {
 	Username     string    `json:"username"`     // 用户名
 	Email        string    `json:"email"`        // 邮箱
 	PasswordHash string    `json:"-"`            // 密码哈希 (不返回)
+	ExternalID   *string   `json:"external_id,omitempty"` // OAuth2 外部ID
 	Role         string    `json:"role"`         // 角色: admin/operator/viewer
 	Status       string    `json:"status"`       // 状态: active/inactive
 	LastLogin    time.Time `json:"last_login"`   // 最后登录时间

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log"
 	"math/big"
-	"os"
 
 	"fly-print-cloud/api/internal/config"
+	"github.com/spf13/viper"
 	"golang.org/x/crypto/bcrypt"
 	_ "github.com/lib/pq"
 )
@@ -90,6 +90,7 @@ func (db *DB) InitTables() error {
 		status VARCHAR(20) NOT NULL DEFAULT 'offline',
 		version VARCHAR(50),
 		last_heartbeat TIMESTAMP,
+		deleted_at TIMESTAMP,
 		
 		-- 位置信息
 		location VARCHAR(255),
@@ -271,7 +272,7 @@ func (db *DB) CreateDefaultAdmin() error {
 	}
 
 	// 只在环境变量允许时创建默认管理员
-	createDefault := os.Getenv("CREATE_DEFAULT_ADMIN")
+	createDefault := viper.GetString("create_default_admin")
 	if createDefault != "true" {
 		log.Println("No admin users found, but CREATE_DEFAULT_ADMIN is not set to 'true'")
 		log.Println("To create a default admin, set CREATE_DEFAULT_ADMIN=true and restart")
@@ -279,7 +280,7 @@ func (db *DB) CreateDefaultAdmin() error {
 	}
 
 	// 从环境变量获取管理员密码，如果没有则使用随机密码
-	adminPassword := os.Getenv("DEFAULT_ADMIN_PASSWORD")
+	adminPassword := viper.GetString("default_admin_password")
 	if adminPassword == "" {
 		adminPassword = generateRandomPassword(16)
 		log.Printf("Generated random admin password: %s", adminPassword)
@@ -300,7 +301,7 @@ func (db *DB) CreateDefaultAdmin() error {
 	}
 
 	log.Println("Default admin user created successfully (username: admin)")
-	if os.Getenv("DEFAULT_ADMIN_PASSWORD") == "" {
+	if viper.GetString("default_admin_password") == "" {
 		log.Println("=====================================")
 		log.Println("🔑 IMPORTANT: ADMIN CREDENTIALS")
 		log.Println("=====================================")
