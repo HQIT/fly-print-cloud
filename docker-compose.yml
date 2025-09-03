@@ -73,6 +73,7 @@ services:
       - admin_build:/usr/share/nginx/html
     depends_on:
       - api
+      - admin-console-builder
     networks:
       - fly-print-network
 

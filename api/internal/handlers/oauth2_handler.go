@@ -185,13 +185,14 @@ func (h *OAuth2Handler) Me(c *gin.Context) {
 		return
 	}
 
-	// 只返回 OAuth2 认证信息
+	// 返回 OAuth2 认证信息和 access token
 	SuccessResponse(c, gin.H{
 		"external_id":   oauth2UserInfo.Sub,
 		"username":      oauth2UserInfo.PreferredUsername,
 		"email":         oauth2UserInfo.Email,
 		"name":          oauth2UserInfo.Name,
 		"roles":         oauth2UserInfo.RealmAccess.Roles,
+		"access_token":  accessToken,
 		"authenticated": true,
 	})
 }
