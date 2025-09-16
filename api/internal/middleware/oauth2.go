@@ -8,6 +8,7 @@ import (
 
 	"fly-print-cloud/api/internal/config"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // OAuth2TokenInfo OAuth2 token 信息
@@ -99,6 +100,83 @@ func OAuth2ResourceServer(requiredScopes ...string) gin.HandlerFunc {
 
 // validateOAuth2Token 验证 OAuth2 token 有效性
 func validateOAuth2Token(token string) (*OAuth2TokenInfo, error) {
+	// 首先尝试解析 JWT token（用于 Client Credentials Flow）
+	if tokenInfo, err := parseJWTToken(token); err == nil {
+		return tokenInfo, nil
+	}
+	
+	// 如果 JWT 解析失败，回退到 UserInfo 端点验证（用于 Authorization Code Flow）
+	return validateTokenViaUserInfo(token)
+}
+
+// parseJWTToken 解析 JWT token（不验证签名，仅提取 claims）
+func parseJWTToken(tokenString string) (*OAuth2TokenInfo, error) {
+	// 解析 JWT token（跳过签名验证）
+	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
+	token, _, err := parser.ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse JWT: %w", err)
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, fmt.Errorf("invalid JWT claims")
+	}
+
+	tokenInfo := &OAuth2TokenInfo{}
+	
+	// 提取标准 claims
+	if sub, ok := claims["sub"].(string); ok {
+		tokenInfo.Sub = sub
+	}
+	if preferredUsername, ok := claims["preferred_username"].(string); ok {
+		tokenInfo.PreferredUsername = preferredUsername
+	}
+	if email, ok := claims["email"].(string); ok {
+		tokenInfo.Email = email
+	}
+	if scope, ok := claims["scope"].(string); ok {
+		tokenInfo.Scope = scope
+	}
+
+	// 提取 realm_access roles
+	if realmAccess, ok := claims["realm_access"].(map[string]interface{}); ok {
+		if roles, ok := realmAccess["roles"].([]interface{}); ok {
+			for _, role := range roles {
+				if roleStr, ok := role.(string); ok {
+					tokenInfo.RealmAccess.Roles = append(tokenInfo.RealmAccess.Roles, roleStr)
+				}
+			}
+		}
+	}
+
+	// 提取 resource_access roles
+	if resourceAccess, ok := claims["resource_access"].(map[string]interface{}); ok {
+		tokenInfo.ResourceAccess = make(map[string]struct {
+			Roles []string `json:"roles"`
+		})
+		for client, access := range resourceAccess {
+			if accessMap, ok := access.(map[string]interface{}); ok {
+				if roles, ok := accessMap["roles"].([]interface{}); ok {
+					var roleStrings []string
+					for _, role := range roles {
+						if roleStr, ok := role.(string); ok {
+							roleStrings = append(roleStrings, roleStr)
+						}
+					}
+					tokenInfo.ResourceAccess[client] = struct {
+						Roles []string `json:"roles"`
+					}{Roles: roleStrings}
+				}
+			}
+		}
+	}
+
+	return tokenInfo, nil
+}
+
+// validateTokenViaUserInfo 通过 UserInfo 端点验证 token
+func validateTokenViaUserInfo(token string) (*OAuth2TokenInfo, error) {
 	// 从配置中获取 UserInfo URL
 	userInfoURL := config.GetOAuth2UserInfoURL()
 	if userInfoURL == "" {
