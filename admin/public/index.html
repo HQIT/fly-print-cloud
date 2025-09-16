@@ -2,10 +2,54 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <meta name="theme-color" content="#000000" />
     <meta name="description" content="Fly Print Cloud - 云打印管理系统" />
     <title>Fly Print Cloud</title>
+    <style>
+      /* 移动端表格优化 */
+      @media (max-width: 768px) {
+        .mobile-table .ant-table-thead > tr > th {
+          padding: 8px 4px !important;
+          font-size: 12px !important;
+          white-space: nowrap;
+        }
+        .mobile-table .ant-table-tbody > tr > td {
+          padding: 8px 4px !important;
+          font-size: 11px !important;
+        }
+        .mobile-table .ant-table-container {
+          font-size: 11px !important;
+        }
+        .mobile-table .ant-tag {
+          font-size: 10px !important;
+          padding: 0 4px !important;
+          margin: 0 !important;
+        }
+        .mobile-table .ant-progress-text {
+          display: none !important;
+        }
+        .mobile-table .ant-pagination {
+          text-align: center !important;
+          margin-top: 12px !important;
+        }
+        .mobile-table .ant-pagination-simple .ant-pagination-simple-pager input {
+          width: 40px !important;
+        }
+        /* 卡片内边距优化 */
+        .ant-card-body {
+          padding: 12px 8px !important;
+        }
+        /* 统计卡片字体优化 */
+        .ant-statistic-title {
+          font-size: 12px !important;
+          margin-bottom: 4px !important;
+        }
+        .ant-statistic-content {
+          font-size: 16px !important;
+        }
+      }
+    </style>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
