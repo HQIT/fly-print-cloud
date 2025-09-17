@@ -1,4 +1,5 @@
-FROM dockerpull.pw/library/golang:1.21-alpine AS builder
+#FROM dockerpull.pw/library/golang:1.21-alpine AS builder
+FROM docker.1panel.live/library/golang:1.21-alpine AS builder
 
 # 设置Go代理和网络配置
 ENV GOPROXY=https://goproxy.cn,direct
@@ -16,7 +17,8 @@ RUN go mod verify
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/server
 
 # 运行阶段
-FROM dockerpull.pw/library/alpine:latest
+#FROM dockerpull.pw/library/alpine:latest
+FROM docker.1panel.live/library/alpine:latest
 
 WORKDIR /root/
 

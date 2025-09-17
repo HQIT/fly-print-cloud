@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"log"
 
 	"fly-print-cloud/api/internal/models"
 )
@@ -44,6 +45,56 @@ func (r *EdgeNodeRepository) CreateEdgeNode(node *models.EdgeNode) error {
 
 	if err != nil {
 		return fmt.Errorf("failed to create edge node: %w", err)
+	}
+
+	return nil
+}
+
+// UpsertEdgeNode 创建或更新 Edge Node（用于注册）
+func (r *EdgeNodeRepository) UpsertEdgeNode(node *models.EdgeNode) error {
+	query := `
+		INSERT INTO edge_nodes (
+			id, name, status, version, last_heartbeat,
+			location, latitude, longitude,
+			ip_address, mac_address, network_interface,
+			os_version, cpu_info, memory_info, disk_info,
+			connection_quality, latency
+		) VALUES (
+			$1, $2, $3, $4, $5,
+			$6, $7, $8,
+			$9, $10, $11,
+			$12, $13, $14, $15,
+			$16, $17
+		)
+		ON CONFLICT (id) DO UPDATE SET
+			name = EXCLUDED.name,
+			status = EXCLUDED.status,
+			version = EXCLUDED.version,
+			last_heartbeat = EXCLUDED.last_heartbeat,
+			location = EXCLUDED.location,
+			latitude = EXCLUDED.latitude,
+			longitude = EXCLUDED.longitude,
+			ip_address = EXCLUDED.ip_address,
+			mac_address = EXCLUDED.mac_address,
+			network_interface = EXCLUDED.network_interface,
+			os_version = EXCLUDED.os_version,
+			cpu_info = EXCLUDED.cpu_info,
+			memory_info = EXCLUDED.memory_info,
+			disk_info = EXCLUDED.disk_info,
+			connection_quality = EXCLUDED.connection_quality,
+			latency = EXCLUDED.latency,
+			deleted_at = NULL`
+
+	_, err := r.db.Exec(query,
+		node.ID, node.Name, node.Status, node.Version, node.LastHeartbeat,
+		node.Location, node.Latitude, node.Longitude,
+		node.IPAddress, node.MACAddress, node.NetworkInterface,
+		node.OSVersion, node.CPUInfo, node.MemoryInfo, node.DiskInfo,
+		node.ConnectionQuality, node.Latency,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to upsert edge node: %w", err)
 	}
 
 	return nil
@@ -191,6 +242,7 @@ func (r *EdgeNodeRepository) HardDeleteEdgeNode(id string) error {
 
 // ListEdgeNodes 获取 Edge Node 列表
 func (r *EdgeNodeRepository) ListEdgeNodes(offset, limit int, status string) ([]*models.EdgeNode, int, error) {
+	log.Printf("🔍 [DB DEBUG] ListEdgeNodes: offset=%d, limit=%d, status='%s'", offset, limit, status)
 	var nodes []*models.EdgeNode
 	
 	// 构建查询条件
@@ -206,11 +258,14 @@ func (r *EdgeNodeRepository) ListEdgeNodes(offset, limit int, status string) ([]
 
 	// 查询总数
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM edge_nodes %s", whereClause)
+	log.Printf("📊 [DB DEBUG] Count query: %s, args: %v", countQuery, args)
 	var total int
 	err := r.db.QueryRow(countQuery, args...).Scan(&total)
 	if err != nil {
+		log.Printf("❌ [DB DEBUG] Count query failed: %v", err)
 		return nil, 0, fmt.Errorf("failed to count edge nodes: %w", err)
 	}
+	log.Printf("📊 [DB DEBUG] Total count: %d", total)
 
 	// 查询数据
 	query := fmt.Sprintf(`
@@ -225,9 +280,12 @@ func (r *EdgeNodeRepository) ListEdgeNodes(offset, limit int, status string) ([]
 		LIMIT $%d OFFSET $%d`, whereClause, argIndex, argIndex+1)
 
 	args = append(args, limit, offset)
+	log.Printf("📊 [DB DEBUG] Data query: %s", query)
+	log.Printf("📊 [DB DEBUG] Query args: %v", args)
 
 	rows, err := r.db.Query(query, args...)
 	if err != nil {
+		log.Printf("❌ [DB DEBUG] Data query failed: %v", err)
 		return nil, 0, fmt.Errorf("failed to query edge nodes: %w", err)
 	}
 	defer rows.Close()

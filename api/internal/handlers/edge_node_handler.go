@@ -86,9 +86,9 @@ func (h *EdgeNodeHandler) RegisterEdgeNode(c *gin.Context) {
 		LastHeartbeat: time.Now(),
 	}
 
-	if err := h.edgeNodeRepo.CreateEdgeNode(node); err != nil {
-		log.Printf("Failed to create edge node: %v", err)
-		InternalErrorResponse(c, "创建 Edge Node 失败")
+	if err := h.edgeNodeRepo.UpsertEdgeNode(node); err != nil {
+		log.Printf("Failed to register edge node: %v", err)
+		InternalErrorResponse(c, "注册 Edge Node 失败")
 		return
 	}
 
@@ -136,12 +136,14 @@ func (h *EdgeNodeHandler) ListEdgeNodes(c *gin.Context) {
 	offset := (page - 1) * pageSize
 
 	// 查询 Edge Node 列表
+	log.Printf("🔍 [DEBUG] 查询Edge Nodes: offset=%d, pageSize=%d, status='%s'", offset, pageSize, status)
 	nodes, total, err := h.edgeNodeRepo.ListEdgeNodes(offset, pageSize, status)
 	if err != nil {
-		log.Printf("Failed to list edge nodes: %v", err)
+		log.Printf("❌ [DEBUG] Failed to list edge nodes: %v", err)
 		InternalErrorResponse(c, "获取 Edge Node 列表失败")
 		return
 	}
+	log.Printf("📊 [DEBUG] 查询结果: 找到 %d 个节点，总数 %d", len(nodes), total)
 
 	// 转换为响应格式
 	nodeInfos := make([]EdgeNodeInfo, len(nodes))

@@ -53,11 +53,12 @@ func (r *PrinterRepository) GetPrinterByID(printerID string) (*models.Printer, e
 	
 	printer := &models.Printer{}
 	var ipAddress sql.NullString
+	var firmwareVersion sql.NullString
 	var capabilitiesJSON []byte
 	
 	err := r.db.QueryRow(query, printerID).Scan(
 		&printer.ID, &printer.Name, &printer.Model, &printer.SerialNumber, &printer.Status,
-		&printer.FirmwareVersion, &printer.PortInfo, &ipAddress, &printer.MACAddress,
+		&firmwareVersion, &printer.PortInfo, &ipAddress, &printer.MACAddress,
 		&printer.NetworkConfig, &printer.Latitude, &printer.Longitude, &printer.Location,
 		&capabilitiesJSON, &printer.EdgeNodeID, &printer.QueueLength,
 		&printer.CreatedAt, &printer.UpdatedAt,
@@ -73,6 +74,9 @@ func (r *PrinterRepository) GetPrinterByID(printerID string) (*models.Printer, e
 	// 处理可空字段
 	if ipAddress.Valid {
 		printer.IPAddress = &ipAddress.String
+	}
+	if firmwareVersion.Valid {
+		printer.FirmwareVersion = firmwareVersion.String
 	}
 	
 	// 解析 JSON capabilities
@@ -114,11 +118,12 @@ func (r *PrinterRepository) ListPrinters(page, pageSize int) ([]*models.Printer,
 	for rows.Next() {
 		printer := &models.Printer{}
 		var ipAddress sql.NullString
+		var firmwareVersion sql.NullString
 		var capabilitiesJSON []byte
 		
 		err := rows.Scan(
 			&printer.ID, &printer.Name, &printer.Model, &printer.SerialNumber, &printer.Status,
-			&printer.FirmwareVersion, &printer.PortInfo, &ipAddress, &printer.MACAddress,
+			&firmwareVersion, &printer.PortInfo, &ipAddress, &printer.MACAddress,
 			&printer.NetworkConfig, &printer.Latitude, &printer.Longitude, &printer.Location,
 			&capabilitiesJSON, &printer.EdgeNodeID, &printer.QueueLength,
 			&printer.CreatedAt, &printer.UpdatedAt,
@@ -130,6 +135,9 @@ func (r *PrinterRepository) ListPrinters(page, pageSize int) ([]*models.Printer,
 		// 处理可空字段
 		if ipAddress.Valid {
 			printer.IPAddress = &ipAddress.String
+		}
+		if firmwareVersion.Valid {
+			printer.FirmwareVersion = firmwareVersion.String
 		}
 		
 		// 解析 JSON capabilities
@@ -163,11 +171,12 @@ func (r *PrinterRepository) ListPrintersByEdgeNode(edgeNodeID string) ([]*models
 	for rows.Next() {
 		printer := &models.Printer{}
 		var ipAddress sql.NullString
+		var firmwareVersion sql.NullString
 		var capabilitiesJSON []byte
 		
 		err := rows.Scan(
 			&printer.ID, &printer.Name, &printer.Model, &printer.SerialNumber, &printer.Status,
-			&printer.FirmwareVersion, &printer.PortInfo, &ipAddress, &printer.MACAddress,
+			&firmwareVersion, &printer.PortInfo, &ipAddress, &printer.MACAddress,
 			&printer.NetworkConfig, &printer.Latitude, &printer.Longitude, &printer.Location,
 			&capabilitiesJSON, &printer.EdgeNodeID, &printer.QueueLength,
 			&printer.CreatedAt, &printer.UpdatedAt,
@@ -179,6 +188,9 @@ func (r *PrinterRepository) ListPrintersByEdgeNode(edgeNodeID string) ([]*models
 		// 处理可空字段
 		if ipAddress.Valid {
 			printer.IPAddress = &ipAddress.String
+		}
+		if firmwareVersion.Valid {
+			printer.FirmwareVersion = firmwareVersion.String
 		}
 		
 		// 解析 JSON capabilities

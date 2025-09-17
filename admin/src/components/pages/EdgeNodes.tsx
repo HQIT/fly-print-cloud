@@ -41,20 +41,35 @@ class EdgeNodesService {
   async getEdgeNodes(): Promise<EdgeNode[]> {
     try {
       const token = await this.getToken();
+      console.log('🔑 [DEBUG] Token获取结果:', token ? '成功' : '失败');
+      
       const response = await fetch('/api/v1/admin/edge-nodes', {
         headers: {
           ...(token && { 'Authorization': `Bearer ${token}` }),
         },
       });
       
+      console.log('🌐 [DEBUG] API响应状态:', response.status, response.statusText);
+      
       if (response.ok) {
         const result = await response.json();
-        return result.data;
+        console.log('📊 [DEBUG] API响应数据:', result);
+        
+        if (result.code === 200 && result.data && Array.isArray(result.data.items)) {
+          console.log('✅ [DEBUG] 成功获取Edge Nodes数据，数量:', result.data.items.length);
+          return result.data.items;
+        } else {
+          console.warn('⚠️ [DEBUG] API响应格式异常:', result);
+        }
+      } else {
+        const errorText = await response.text();
+        console.error('❌ [DEBUG] API调用失败:', response.status, errorText);
       }
     } catch (error) {
-      console.error('获取边缘节点列表失败:', error);
+      console.error('💥 [DEBUG] 网络请求异常:', error);
     }
     
+    console.log('🔄 [DEBUG] 使用fallback数据');
     // 返回模拟数据作为fallback（适配后端格式）
     return [
       {
