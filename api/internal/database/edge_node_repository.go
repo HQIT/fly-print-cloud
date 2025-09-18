@@ -375,6 +375,7 @@ func (r *EdgeNodeRepository) ListEdgeNodes(offset, limit int, status string) ([]
 
 // UpdateHeartbeat 更新心跳时间
 func (r *EdgeNodeRepository) UpdateHeartbeat(id string) error {
+	// 简化：每次心跳都更新时间（因为不再存储status字段）
 	query := `UPDATE edge_nodes SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = $1`
 	
 	_, err := r.db.Exec(query, id)
@@ -395,4 +396,26 @@ func (r *EdgeNodeRepository) UpdateStatus(id, status string) error {
 	}
 
 	return nil
+}
+
+// CheckAndUpdateOfflineNodes 检查并更新超时的节点状态为离线
+func (r *EdgeNodeRepository) CheckAndUpdateOfflineNodes(timeoutMinutes int) (int, error) {
+	query := `
+		UPDATE edge_nodes 
+		SET status = 'offline' 
+		WHERE status = 'online' 
+		  AND last_heartbeat < CURRENT_TIMESTAMP - INTERVAL '%d minutes'
+		  AND deleted_at IS NULL`
+	
+	result, err := r.db.Exec(fmt.Sprintf(query, timeoutMinutes))
+	if err != nil {
+		return 0, fmt.Errorf("failed to update offline nodes: %w", err)
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	
+	return int(rowsAffected), nil
 }

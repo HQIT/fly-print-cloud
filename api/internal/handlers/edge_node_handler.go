@@ -13,12 +13,14 @@ import (
 // EdgeNodeHandler Edge Node 管理处理器
 type EdgeNodeHandler struct {
 	edgeNodeRepo *database.EdgeNodeRepository
+	printerRepo  *database.PrinterRepository
 }
 
 // NewEdgeNodeHandler 创建 Edge Node 管理处理器
-func NewEdgeNodeHandler(edgeNodeRepo *database.EdgeNodeRepository) *EdgeNodeHandler {
+func NewEdgeNodeHandler(edgeNodeRepo *database.EdgeNodeRepository, printerRepo *database.PrinterRepository) *EdgeNodeHandler {
 	return &EdgeNodeHandler{
 		edgeNodeRepo: edgeNodeRepo,
+		printerRepo:  printerRepo,
 	}
 }
 
@@ -66,6 +68,7 @@ type EdgeNodeInfo struct {
 	DiskInfo          string    `json:"disk_info"`
 	ConnectionQuality string    `json:"connection_quality"`
 	Latency           int       `json:"latency"`
+	PrinterCount      int       `json:"printer_count"`    // 管理的打印机数量
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
@@ -135,6 +138,13 @@ func (h *EdgeNodeHandler) ListEdgeNodes(c *gin.Context) {
 
 	offset := (page - 1) * pageSize
 
+	// 可选：检查并更新超时的节点状态（3分钟超时）
+	if updatedCount, err := h.edgeNodeRepo.CheckAndUpdateOfflineNodes(3); err != nil {
+		log.Printf("⚠️ [DEBUG] Failed to check offline nodes: %v", err)
+	} else if updatedCount > 0 {
+		log.Printf("📱 [DEBUG] Updated %d nodes to offline status", updatedCount)
+	}
+
 	// 查询 Edge Node 列表
 	log.Printf("🔍 [DEBUG] 查询Edge Nodes: offset=%d, pageSize=%d, status='%s'", offset, pageSize, status)
 	nodes, total, err := h.edgeNodeRepo.ListEdgeNodes(offset, pageSize, status)
@@ -148,6 +158,13 @@ func (h *EdgeNodeHandler) ListEdgeNodes(c *gin.Context) {
 	// 转换为响应格式
 	nodeInfos := make([]EdgeNodeInfo, len(nodes))
 	for i, node := range nodes {
+		// 获取该边缘节点管理的打印机数量
+		printerCount, err := h.printerRepo.CountPrintersByEdgeNode(node.ID)
+		if err != nil {
+			log.Printf("⚠️ [DEBUG] Failed to get printer count for edge node %s: %v", node.ID, err)
+			printerCount = 0 // 如果查询失败，设置为0
+		}
+		
 		nodeInfos[i] = EdgeNodeInfo{
 			ID:                node.ID,
 			Name:              node.Name,
@@ -166,6 +183,7 @@ func (h *EdgeNodeHandler) ListEdgeNodes(c *gin.Context) {
 			DiskInfo:          node.DiskInfo,
 			ConnectionQuality: node.ConnectionQuality,
 			Latency:           node.Latency,
+			PrinterCount:      printerCount,
 			CreatedAt:         node.CreatedAt,
 			UpdatedAt:         node.UpdatedAt,
 		}
@@ -188,6 +206,13 @@ func (h *EdgeNodeHandler) GetEdgeNode(c *gin.Context) {
 		return
 	}
 
+	// 获取该边缘节点管理的打印机数量
+	printerCount, err := h.printerRepo.CountPrintersByEdgeNode(node.ID)
+	if err != nil {
+		log.Printf("⚠️ [DEBUG] Failed to get printer count for edge node %s: %v", node.ID, err)
+		printerCount = 0 // 如果查询失败，设置为0
+	}
+
 	nodeInfo := EdgeNodeInfo{
 		ID:                node.ID,
 		Name:              node.Name,
@@ -206,6 +231,7 @@ func (h *EdgeNodeHandler) GetEdgeNode(c *gin.Context) {
 		DiskInfo:          node.DiskInfo,
 		ConnectionQuality: node.ConnectionQuality,
 		Latency:           node.Latency,
+		PrinterCount:      printerCount,
 		CreatedAt:         node.CreatedAt,
 		UpdatedAt:         node.UpdatedAt,
 	}
@@ -322,7 +348,7 @@ func (h *EdgeNodeHandler) Heartbeat(c *gin.Context) {
 		return
 	}
 
-	// 更新心跳时间和状态
+	// 更新心跳时间
 	if err := h.edgeNodeRepo.UpdateHeartbeat(req.NodeID); err != nil {
 		log.Printf("Failed to update heartbeat for edge node %s: %v", req.NodeID, err)
 		InternalErrorResponse(c, "更新心跳失败")

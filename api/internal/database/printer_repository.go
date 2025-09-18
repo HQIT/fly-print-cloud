@@ -151,6 +151,19 @@ func (r *PrinterRepository) ListPrinters(page, pageSize int) ([]*models.Printer,
 	return printers, total, nil
 }
 
+// CountPrintersByEdgeNode 统计边缘节点的打印机数量
+func (r *PrinterRepository) CountPrintersByEdgeNode(edgeNodeID string) (int, error) {
+	query := `SELECT COUNT(*) FROM printers WHERE edge_node_id = $1 AND deleted_at IS NULL`
+	
+	var count int
+	err := r.db.QueryRow(query, edgeNodeID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count printers by edge node: %w", err)
+	}
+	
+	return count, nil
+}
+
 // ListPrintersByEdgeNode 根据 Edge Node ID 获取打印机列表
 func (r *PrinterRepository) ListPrintersByEdgeNode(edgeNodeID string) ([]*models.Printer, error) {
 	query := `

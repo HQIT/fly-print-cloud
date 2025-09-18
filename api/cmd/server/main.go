@@ -46,7 +46,7 @@ func main() {
 
 	// 初始化处理器
 	userHandler := handlers.NewUserHandler(userRepo)
-	edgeNodeHandler := handlers.NewEdgeNodeHandler(edgeNodeRepo)
+	edgeNodeHandler := handlers.NewEdgeNodeHandler(edgeNodeRepo, printerRepo)
 	printerHandler := handlers.NewPrinterHandler(printerRepo, edgeNodeRepo)
 	printJobHandler := handlers.NewPrintJobHandler(printJobRepo)
 	oauth2Handler := handlers.NewOAuth2Handler(&cfg.OAuth2, &cfg.Admin, userRepo)
@@ -180,6 +180,4 @@ func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandl
 			edgeGroup.GET("/ws", wsHandler.HandleConnection)
 		}
 	}
-
-
 }

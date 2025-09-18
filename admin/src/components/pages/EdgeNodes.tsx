@@ -16,8 +16,7 @@ interface EdgeNode {
   status: 'online' | 'offline' | 'error';
   last_heartbeat: string;
   version: string;
-  // 以下字段从后端计算或扩展
-  printerCount?: number;
+  printer_count: number;  // 后端返回的打印机数量字段
   key?: string;
 }
 
@@ -79,7 +78,7 @@ class EdgeNodesService {
         status: 'online',
         last_heartbeat: '2024-01-15T12:00:00Z',
         version: 'v1.2.3',
-        printerCount: 3,
+        printer_count: 3,
       },
       {
         id: '2',
@@ -88,7 +87,7 @@ class EdgeNodesService {
         status: 'online',
         last_heartbeat: '2024-01-15T11:58:00Z',
         version: 'v1.2.3',
-        printerCount: 2,
+        printer_count: 2,
       },
       {
         id: '3',
@@ -97,7 +96,7 @@ class EdgeNodesService {
         status: 'offline',
         last_heartbeat: '2024-01-15T09:30:00Z',
         version: 'v1.2.2',
-        printerCount: 1,
+        printer_count: 1,
       },
       {
         id: '4',
@@ -106,7 +105,7 @@ class EdgeNodesService {
         status: 'error',
         last_heartbeat: '2024-01-15T08:45:00Z',
         version: 'v1.2.3',
-        printerCount: 2,
+        printer_count: 2,
       },
     ];
   }
@@ -137,7 +136,7 @@ const EdgeNodes: React.FC = () => {
             status: 'online' as const,
             last_heartbeat: '2024-01-15T12:00:00Z',
             version: 'v1.2.3',
-            printerCount: 3,
+            printer_count: 3,
           },
           {
             id: '2',
@@ -146,7 +145,7 @@ const EdgeNodes: React.FC = () => {
             status: 'online' as const,
             last_heartbeat: '2024-01-15T11:58:00Z',
             version: 'v1.2.3',
-            printerCount: 2,
+            printer_count: 2,
           },
           {
             id: '3',
@@ -155,7 +154,7 @@ const EdgeNodes: React.FC = () => {
             status: 'offline' as const,
             last_heartbeat: '2024-01-15T09:30:00Z',
             version: 'v1.2.2',
-            printerCount: 1,
+            printer_count: 1,
           },
           {
             id: '4',
@@ -164,7 +163,7 @@ const EdgeNodes: React.FC = () => {
             status: 'error' as const,
             last_heartbeat: '2024-01-15T08:45:00Z',
             version: 'v1.2.3',
-            printerCount: 2,
+            printer_count: 2,
           },
         ];
         setEdgeNodes(fallbackNodes.map(node => ({ ...node, key: node.id })));
@@ -228,12 +227,12 @@ const EdgeNodes: React.FC = () => {
     },
     {
       title: '管理打印机',
-      dataIndex: 'printerCount',
-      key: 'printerCount',
+      dataIndex: 'printer_count',
+      key: 'printer_count',
       render: (count: number) => (
         <span>
           <PrinterOutlined style={{ marginRight: 4 }} />
-          {count} 台
+          {count || 0} 台
         </span>
       ),
     },
@@ -250,12 +249,9 @@ const EdgeNodes: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 80,
       render: (record: EdgeNode) => (
-        <Space>
-          <a onClick={() => message.info(`查看节点 ${record.name} 详情`)}>详情</a>
-          <a onClick={() => message.info(`重启节点 ${record.name}`)}>重启</a>
-        </Space>
+        <a onClick={() => message.info(`查看节点 ${record.name} 详情`)}>详情</a>
       ),
     },
   ];
