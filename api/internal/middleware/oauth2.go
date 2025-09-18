@@ -98,7 +98,12 @@ func OAuth2ResourceServer(requiredScopes ...string) gin.HandlerFunc {
 	}
 }
 
-// validateOAuth2Token 验证 OAuth2 token 有效性
+// ValidateOAuth2Token 验证 OAuth2 token（导出方法）
+func ValidateOAuth2Token(token string) (*OAuth2TokenInfo, error) {
+	return validateOAuth2Token(token)
+}
+
+// validateOAuth2Token 验证 OAuth2 token 有效性（内部方法）
 func validateOAuth2Token(token string) (*OAuth2TokenInfo, error) {
 	// 首先尝试解析 JWT token（用于 Client Credentials Flow）
 	if tokenInfo, err := parseJWTToken(token); err == nil {
@@ -239,7 +244,29 @@ func extractStandardRoles(tokenInfo *OAuth2TokenInfo) []string {
 	return removeDuplicates(allRoles)
 }
 
-// validateScopes 验证用户角色是否满足权限要求
+// HasRequiredScope 检查是否有必需的 scope（导出方法）
+func HasRequiredScope(tokenInfo *OAuth2TokenInfo, requiredScope string) bool {
+	// 从 scope 字符串中提取权限列表
+	scopes := strings.Fields(tokenInfo.Scope)
+	
+	// 检查是否包含所需的 scope
+	for _, scope := range scopes {
+		if scope == requiredScope {
+			return true
+		}
+	}
+	
+	// 检查 realm roles（某些情况下 scope 可能存储在 roles 中）
+	for _, role := range tokenInfo.RealmAccess.Roles {
+		if role == requiredScope {
+			return true
+		}
+	}
+	
+	return false
+}
+
+// validateScopes 验证用户角色是否满足权限要求（内部方法）
 func validateScopes(userRoles []string, requiredScopes []string) bool {
 	// 如果没有要求特定权限，只要有任何角色就允许
 	if len(requiredScopes) == 0 {
