@@ -2,6 +2,7 @@ package websocket
 
 import "time"
 
+
 // 基础消息格式
 type Message struct {
 	Type      string      `json:"type"`

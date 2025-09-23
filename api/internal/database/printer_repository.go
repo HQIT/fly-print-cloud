@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 	"fly-print-cloud/api/internal/models"
 )
 
@@ -41,6 +42,49 @@ func (r *PrinterRepository) CreatePrinter(printer *models.Printer) error {
 		return fmt.Errorf("failed to create printer: %w", err)
 	}
 	return nil
+}
+
+// GetPrinterByNameAndEdgeNode 根据名称和边缘节点ID获取打印机
+func (r *PrinterRepository) GetPrinterByNameAndEdgeNode(name, edgeNodeID string) (*models.Printer, error) {
+	query := `
+		SELECT id, name, model, serial_number, status, firmware_version, port_info,
+		       ip_address, mac_address, network_config, latitude, longitude, location,
+		       capabilities, edge_node_id, queue_length, created_at, updated_at
+		FROM printers 
+		WHERE name = $1 AND edge_node_id = $2`
+	
+	var printer models.Printer
+	var capabilitiesJSON []byte
+	var firmwareVersion, portInfo sql.NullString
+	
+	err := r.db.QueryRow(query, name, edgeNodeID).Scan(
+		&printer.ID, &printer.Name, &printer.Model, &printer.SerialNumber, &printer.Status,
+		&firmwareVersion, &portInfo, &printer.IPAddress, &printer.MACAddress,
+		&printer.NetworkConfig, &printer.Latitude, &printer.Longitude, &printer.Location,
+		&capabilitiesJSON, &printer.EdgeNodeID, &printer.QueueLength,
+		&printer.CreatedAt, &printer.UpdatedAt,
+	)
+	
+	if err != nil {
+		return nil, fmt.Errorf("failed to get printer by name and edge node: %w", err)
+	}
+	
+	// 处理可能为 NULL 的字段
+	if firmwareVersion.Valid {
+		printer.FirmwareVersion = firmwareVersion.String
+	}
+	if portInfo.Valid {
+		printer.PortInfo = portInfo.String
+	}
+	
+	// 解析 capabilities JSON
+	if len(capabilitiesJSON) > 0 {
+		if err := json.Unmarshal(capabilitiesJSON, &printer.Capabilities); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal capabilities: %w", err)
+		}
+	}
+	
+	return &printer, nil
 }
 
 // GetPrinterByID 根据ID获取打印机
@@ -153,7 +197,7 @@ func (r *PrinterRepository) ListPrinters(page, pageSize int) ([]*models.Printer,
 
 // CountPrintersByEdgeNode 统计边缘节点的打印机数量
 func (r *PrinterRepository) CountPrintersByEdgeNode(edgeNodeID string) (int, error) {
-	query := `SELECT COUNT(*) FROM printers WHERE edge_node_id = $1 AND deleted_at IS NULL`
+	query := `SELECT COUNT(*) FROM printers WHERE edge_node_id = $1`
 	
 	var count int
 	err := r.db.QueryRow(query, edgeNodeID).Scan(&count)
@@ -270,3 +314,58 @@ func (r *PrinterRepository) DeletePrinter(printerID string) error {
 	
 	return nil
 }
+
+// UpsertPrinter 插入或更新打印机（基于 name + edge_node_id 的唯一性）
+func (r *PrinterRepository) UpsertPrinter(printer *models.Printer) error {
+	// 将 Capabilities 结构体转换为 JSON
+	capabilitiesJSON, err := json.Marshal(printer.Capabilities)
+	if err != nil {
+		return fmt.Errorf("failed to marshal capabilities: %w", err)
+	}
+
+	query := `
+		INSERT INTO printers (
+			id, name, model, serial_number, status, firmware_version, port_info,
+			ip_address, mac_address, network_config, latitude, longitude, location,
+			capabilities, edge_node_id, queue_length, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+		)
+		ON CONFLICT (name, edge_node_id) 
+		DO UPDATE SET
+			model = EXCLUDED.model,
+			serial_number = EXCLUDED.serial_number,
+			status = EXCLUDED.status,
+			firmware_version = EXCLUDED.firmware_version,
+			port_info = EXCLUDED.port_info,
+			ip_address = EXCLUDED.ip_address,
+			mac_address = EXCLUDED.mac_address,
+			network_config = EXCLUDED.network_config,
+			latitude = EXCLUDED.latitude,
+			longitude = EXCLUDED.longitude,
+			location = EXCLUDED.location,
+			capabilities = EXCLUDED.capabilities,
+			queue_length = EXCLUDED.queue_length,
+			updated_at = CURRENT_TIMESTAMP
+		RETURNING id`
+
+	var returnedID string
+	err = r.db.QueryRow(
+		query,
+		printer.ID, printer.Name, printer.Model, printer.SerialNumber,
+		printer.Status, printer.FirmwareVersion, printer.PortInfo,
+		printer.IPAddress, printer.MACAddress, printer.NetworkConfig,
+		printer.Latitude, printer.Longitude, printer.Location,
+		capabilitiesJSON, printer.EdgeNodeID, printer.QueueLength,
+		time.Now(), time.Now(),
+	).Scan(&returnedID)
+
+	if err != nil {
+		return fmt.Errorf("failed to upsert printer: %w", err)
+	}
+
+	// 更新返回的 ID（如果是更新操作，ID 可能不同）
+	printer.ID = returnedID
+	return nil
+}
+

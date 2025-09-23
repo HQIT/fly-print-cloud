@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"fly-print-cloud/api/internal/database"
 	"fly-print-cloud/api/internal/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -19,13 +20,17 @@ var upgrader = websocket.Upgrader{
 
 // WebSocketHandler WebSocket 处理器
 type WebSocketHandler struct {
-	manager *ConnectionManager
+	manager      *ConnectionManager
+	printerRepo  *database.PrinterRepository
+	edgeNodeRepo *database.EdgeNodeRepository
 }
 
 // NewWebSocketHandler 创建 WebSocket 处理器
-func NewWebSocketHandler(manager *ConnectionManager) *WebSocketHandler {
+func NewWebSocketHandler(manager *ConnectionManager, printerRepo *database.PrinterRepository, edgeNodeRepo *database.EdgeNodeRepository) *WebSocketHandler {
 	return &WebSocketHandler{
-		manager: manager,
+		manager:      manager,
+		printerRepo:  printerRepo,
+		edgeNodeRepo: edgeNodeRepo,
 	}
 }
 
@@ -82,7 +87,7 @@ func (h *WebSocketHandler) HandleConnection(c *gin.Context) {
 	}
 
 	// 创建连接对象
-	connection := NewConnection(nodeID, conn, h.manager)
+	connection := NewConnection(nodeID, conn, h.manager, h.printerRepo, h.edgeNodeRepo)
 
 	// 注册连接
 	h.manager.register <- connection

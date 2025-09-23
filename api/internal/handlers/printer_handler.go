@@ -216,13 +216,13 @@ func (h *PrinterHandler) EdgeRegisterPrinter(c *gin.Context) {
 		QueueLength:     0,
 	}
 
-	if err := h.printerRepo.CreatePrinter(printer); err != nil {
-		log.Printf("Failed to register printer by edge node %s: %v", edgeNodeID, err)
+	if err := h.printerRepo.UpsertPrinter(printer); err != nil {
+		log.Printf("Failed to register/update printer by edge node %s: %v", edgeNodeID, err)
 		InternalErrorResponse(c, "注册打印机失败")
 		return
 	}
 
-	log.Printf("Printer %s registered by edge node %s", printer.Name, edgeNodeID)
+	log.Printf("Printer %s registered/updated by edge node %s", printer.Name, edgeNodeID)
 	CreatedResponse(c, printer)
 }
 

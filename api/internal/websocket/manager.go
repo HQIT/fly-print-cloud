@@ -62,7 +62,13 @@ func (m *ConnectionManager) unregisterConnection(conn *Connection) {
 
 	if _, exists := m.connections[conn.NodeID]; exists {
 		delete(m.connections, conn.NodeID)
-		close(conn.Send)
+		// 安全关闭channel，避免重复关闭
+		select {
+		case <-conn.Send:
+			// channel已经关闭
+		default:
+			close(conn.Send)
+		}
 		log.Printf("Edge Node %s disconnected, total connections: %d", conn.NodeID, len(m.connections))
 	}
 }

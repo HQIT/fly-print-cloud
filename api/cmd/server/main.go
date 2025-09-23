@@ -53,7 +53,7 @@ func main() {
 
 	// 初始化 WebSocket 管理器
 	wsManager := websocket.NewConnectionManager()
-	wsHandler := websocket.NewWebSocketHandler(wsManager)
+	wsHandler := websocket.NewWebSocketHandler(wsManager, printerRepo, edgeNodeRepo)
 
 	// 启动 WebSocket 管理器
 	go wsManager.Run()

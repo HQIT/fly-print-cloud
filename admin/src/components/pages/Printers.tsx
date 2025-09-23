@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Tag, Space, Row, Col, Statistic, Progress, message } from 'antd';
+import { Card, Table, Tag, Space, Row, Col, Statistic, Progress, message, Select, Button, Popconfirm } from 'antd';
 import { 
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   StopOutlined,
   PrinterOutlined,
-  PlayCircleOutlined
+  PlayCircleOutlined,
+  DeleteOutlined
 } from '@ant-design/icons';
 
 // 打印机接口（适配后端数据模型）
@@ -16,11 +17,15 @@ interface PrinterStatus {
   location?: string; // 后端可能为空
   status: 'ready' | 'printing' | 'error' | 'offline'; // 后端状态值
   edge_node_id: string;
+  edge_node_name?: string; // Edge Node 名称
   queue_length: number;
-  // 以下字段暂时模拟，等待后端扩展
-  paperLevel?: number;
-  inkLevel?: number;
   key?: string;
+}
+
+// Edge Node 接口
+interface EdgeNode {
+  id: string;
+  name: string;
 }
 
 // Printers 服务类
@@ -40,6 +45,62 @@ class PrintersService {
     return null;
   }
 
+  async getEdgeNodes(): Promise<EdgeNode[]> {
+    try {
+      const token = await this.getToken();
+      const response = await fetch('/api/v1/admin/edge-nodes', {
+        headers: {
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        return result.data.items || [];
+      }
+    } catch (error) {
+      console.error('获取边缘节点列表失败:', error);
+    }
+    
+    return [];
+  }
+
+  async getPrintersWithEdgeNodes(): Promise<{ printers: PrinterStatus[], edgeNodes: EdgeNode[] }> {
+    try {
+      const token = await this.getToken();
+      
+      // 同时获取打印机和边缘节点数据
+      const [printersResponse, edgeNodesResponse] = await Promise.all([
+        fetch('/api/v1/admin/printers', {
+          headers: { ...(token && { 'Authorization': `Bearer ${token}` }) },
+        }),
+        fetch('/api/v1/admin/edge-nodes', {
+          headers: { ...(token && { 'Authorization': `Bearer ${token}` }) },
+        })
+      ]);
+      
+      const printers = printersResponse.ok ? (await printersResponse.json()).data.items || [] : [];
+      const edgeNodes = edgeNodesResponse.ok ? (await edgeNodesResponse.json()).data.items || [] : [];
+      
+      // 创建 Edge Node 映射
+      const edgeNodeMap: { [key: string]: string } = {};
+      edgeNodes.forEach((node: EdgeNode) => {
+        edgeNodeMap[node.id] = node.name;
+      });
+      
+      // 合并数据
+      const printersWithEdgeNode = printers.map((printer: any) => ({
+        ...printer,
+        edge_node_name: edgeNodeMap[printer.edge_node_id] || printer.edge_node_id
+      }));
+      
+      return { printers: printersWithEdgeNode, edgeNodes };
+    } catch (error) {
+      console.error('获取数据失败:', error);
+      throw error;
+    }
+  }
+
   async getPrinters(): Promise<PrinterStatus[]> {
     try {
       const token = await this.getToken();
@@ -51,81 +112,14 @@ class PrintersService {
       
       if (response.ok) {
         const result = await response.json();
-        return result.data;
+        return result.data.items || [];
       }
-    } catch (error) {
-      console.error('获取打印机列表失败:', error);
-    }
-    
-    // 返回模拟数据作为fallback（适配后端格式）
-    return [
-      {
-        id: '1',
-        name: 'HP LaserJet Pro M404n',
-        model: 'HP LaserJet Pro M404n',
-        location: '办公室 A-101',
-        status: 'ready',
-        edge_node_id: 'edge-1',
-        queue_length: 0,
-        paperLevel: 85,
-        inkLevel: 60,
-      },
-      {
-        id: '2',
-        name: 'Canon PIXMA G3020',
-        model: 'Canon PIXMA G3020',
-        location: '办公室 B-205',
-        status: 'printing',
-        edge_node_id: 'edge-1',
-        queue_length: 2,
-        paperLevel: 45,
-        inkLevel: 30,
-      },
-      {
-        id: '3',
-        name: 'Epson EcoTank L3150',
-        model: 'Epson EcoTank L3150',
-        location: '会议室 C-301',
-        status: 'offline',
-        edge_node_id: 'edge-2',
-        queue_length: 0,
-        paperLevel: 20,
-        inkLevel: 80,
-      },
-      {
-        id: '4',
-        name: 'Brother HL-L2350DW',
-        model: 'Brother HL-L2350DW',
-        location: '前台接待',
-        status: 'error',
-        edge_node_id: 'edge-3',
-        queue_length: 1,
-        paperLevel: 0,
-        inkLevel: 15,
-      },
-      {
-        id: '5',
-        name: 'Samsung ML-2161',
-        model: 'Samsung ML-2161',
-        location: '会议室 B-302',
-        status: 'ready',
-        edge_node_id: 'edge-2',
-        queue_length: 0,
-        paperLevel: 95,
-        inkLevel: 45,
-      },
-      {
-        id: '6',
-        name: 'Xerox WorkCentre 3225',
-        model: 'Xerox WorkCentre 3225',
-        location: '财务部',
-        status: 'ready',
-        edge_node_id: 'edge-3',
-        queue_length: 3,
-        paperLevel: 70,
-        inkLevel: 85,
-      },
-    ];
+      } catch (error) {
+        console.error('获取打印机列表失败:', error);
+        throw error;
+      }
+      
+      return [];
   }
 }
 
@@ -134,72 +128,94 @@ const printersService = new PrintersService();
 // Printers 组件
 const Printers: React.FC = () => {
   const [printers, setPrinters] = useState<PrinterStatus[]>([]);
+  const [edgeNodes, setEdgeNodes] = useState<EdgeNode[]>([]);
+  const [filteredPrinters, setFilteredPrinters] = useState<PrinterStatus[]>([]);
+  const [selectedEdgeNode, setSelectedEdgeNode] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-  // 加载打印机数据
-  useEffect(() => {
-    const loadPrinters = async () => {
-      try {
-        setLoading(true);
-        const printerList = await printersService.getPrinters();
-        setPrinters(printerList.map(printer => ({ ...printer, key: printer.id })));
-      } catch (error) {
-        console.error('加载打印机失败:', error);
-        // 设置 fallback 数据
-        const fallbackPrinters = [
-          {
-            id: '1',
-            name: 'HP LaserJet Pro M404n',
-            model: 'HP LaserJet Pro M404n',
-            location: '办公室 A-101',
-            status: 'ready' as const,
-            edge_node_id: 'edge-1',
-            queue_length: 0,
-            paperLevel: 85,
-            inkLevel: 60,
-          },
-          {
-            id: '2',
-            name: 'Canon PIXMA G3020',
-            model: 'Canon PIXMA G3020',
-            location: '办公室 B-205',
-            status: 'printing' as const,
-            edge_node_id: 'edge-1',
-            queue_length: 2,
-            paperLevel: 45,
-            inkLevel: 30,
-          },
-          {
-            id: '3',
-            name: 'Epson EcoTank L3150',
-            model: 'Epson EcoTank L3150',
-            location: '会议室 C-301',
-            status: 'offline' as const,
-            edge_node_id: 'edge-2',
-            queue_length: 0,
-            paperLevel: 20,
-            inkLevel: 80,
-          },
-          {
-            id: '4',
-            name: 'Brother HL-L2350DW',
-            model: 'Brother HL-L2350DW',
-            location: '前台接待',
-            status: 'error' as const,
-            edge_node_id: 'edge-3',
-            queue_length: 1,
-            paperLevel: 0,
-            inkLevel: 15,
-          },
-        ];
-        setPrinters(fallbackPrinters.map(printer => ({ ...printer, key: printer.id })));
-      } finally {
-        setLoading(false);
+  // 获取token
+  const getToken = async (): Promise<string | null> => {
+    try {
+      const response = await fetch('/auth/me');
+      const result = await response.json();
+      
+      if (result.code === 200 && result.data.access_token) {
+        return result.data.access_token;
       }
-    };
+      return null;
+    } catch (error) {
+      console.error('获取token失败:', error);
+      return null;
+    }
+  };
 
-    loadPrinters();
+  // 删除打印机
+  const handleDeletePrinter = async (printerId: string, printerName: string) => {
+    try {
+      const token = await getToken();
+      if (!token) {
+        message.error('未找到认证令牌，请重新登录');
+        return;
+      }
+
+      const response = await fetch(`/api/v1/admin/printers/${printerId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        message.success(`打印机 ${printerName} 删除成功`);
+        loadData(); // 重新加载数据
+      } else {
+        const error = await response.json();
+        message.error(`删除失败: ${error.message || '未知错误'}`);
+      }
+    } catch (error) {
+      console.error('删除打印机失败:', error);
+      message.error('删除失败，请稍后重试');
+    }
+  };
+
+  // 加载数据函数
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const { printers: printerList, edgeNodes: edgeNodeList } = await printersService.getPrintersWithEdgeNodes();
+      
+      const printersWithKey = printerList.map(printer => ({ ...printer, key: printer.id }));
+      setPrinters(printersWithKey);
+      setEdgeNodes(edgeNodeList);
+      setFilteredPrinters(printersWithKey);
+    } catch (error) {
+      console.error('加载数据失败:', error);
+      message.error('加载打印机数据失败，请稍后重试');
+      // 设置为空数组
+      setPrinters([]);
+      setEdgeNodes([]);
+      setFilteredPrinters([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 初始加载数据
+  useEffect(() => {
+    loadData();
   }, []);
+
+  // Edge Node 筛选逻辑
+  useEffect(() => {
+    if (selectedEdgeNode === '') {
+      setFilteredPrinters(printers);
+    } else {
+      setFilteredPrinters(printers.filter(printer => printer.edge_node_id === selectedEdgeNode));
+    }
+  }, [selectedEdgeNode, printers]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -231,11 +247,6 @@ const Printers: React.FC = () => {
     }
   };
 
-  const getLevelColor = (level: number) => {
-    if (level > 50) return '#52c41a';
-    if (level > 20) return '#faad14';
-    return '#ff4d4f';
-  };
 
   const columns = [
     {
@@ -246,10 +257,24 @@ const Printers: React.FC = () => {
       width: 200,
     },
     {
+      title: '型号',
+      dataIndex: 'model',
+      key: 'model',
+      width: 200,
+    },
+    {
+      title: '所属边缘节点',
+      dataIndex: 'edge_node_name',
+      key: 'edge_node_name',
+      width: 180,
+      render: (text: string) => text || '未知',
+    },
+    {
       title: '位置',
       dataIndex: 'location',
       key: 'location',
       width: 150,
+      render: (text: string) => text || '-',
     },
     {
       title: '状态',
@@ -263,48 +288,27 @@ const Printers: React.FC = () => {
       ),
     },
     {
-      title: '纸张余量',
-      dataIndex: 'paperLevel',
-      key: 'paperLevel',
-      width: 150,
-      render: (level: number) => (
-        <div>
-          <Progress 
-            percent={level} 
-            size="small" 
-            strokeColor={getLevelColor(level)}
-            format={(percent) => `${percent}%`}
-          />
-        </div>
-      ),
-    },
-    {
-      title: '墨水/墨粉',
-      dataIndex: 'inkLevel',
-      key: 'inkLevel',
-      width: 150,
-      render: (level: number) => (
-        <div>
-          <Progress 
-            percent={level} 
-            size="small" 
-            strokeColor={getLevelColor(level)}
-            format={(percent) => `${percent}%`}
-          />
-        </div>
-      ),
-    },
-    {
       title: '操作',
       key: 'action',
-      width: 150,
-      render: (record: PrinterStatus) => (
-        <Space>
-          <a onClick={() => message.info(`查看打印机 ${record.name} 详情`)}>详情</a>
-          <a onClick={() => message.info(`测试打印机 ${record.name}`)}>测试</a>
-          {record.status === 'error' && (
-            <a onClick={() => message.info(`重启打印机 ${record.name}`)}>重启</a>
-          )}
+      width: 100,
+      render: (_, record: PrinterStatus) => (
+        <Space size="small">
+          <Popconfirm
+            title="确认删除"
+            description={`确定要删除打印机 "${record.name}" 吗？`}
+            onConfirm={() => handleDeletePrinter(record.id, record.name)}
+            okText="确认"
+            cancelText="取消"
+          >
+            <Button 
+              type="text" 
+              danger 
+              size="small"
+              icon={<DeleteOutlined />}
+            >
+              删除
+            </Button>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -319,19 +323,50 @@ const Printers: React.FC = () => {
         </Space>
       </div>
 
+      {/* 筛选器 */}
+      <div style={{ marginBottom: 16 }}>
+        <Space>
+          <span>边缘节点：</span>
+          <Select 
+            value={selectedEdgeNode} 
+            onChange={setSelectedEdgeNode}
+            style={{ width: 200 }}
+            placeholder="选择边缘节点"
+          >
+            <Select.Option value="">全部</Select.Option>
+            {edgeNodes.map(node => (
+              <Select.Option key={node.id} value={node.id}>{node.name}</Select.Option>
+            ))}
+          </Select>
+        </Space>
+      </div>
+
       <Card>
         <Table
           columns={columns}
-          dataSource={printers}
+          dataSource={filteredPrinters}
           loading={loading}
           pagination={{
-            total: printers.length,
-            pageSize: 10,
+            current: currentPage,
+            pageSize: pageSize,
+            total: filteredPrinters.length,
             showSizeChanger: true,
             showQuickJumper: true,
             showTotal: (total) => `共 ${total} 台打印机`,
+            onChange: (page, size) => {
+              setCurrentPage(page);
+              setPageSize(size || 10);
+            },
+            onShowSizeChange: (current, size) => {
+              setCurrentPage(1);
+              setPageSize(size);
+            },
+            pageSizeOptions: ['10', '20', '50', '100'],
           }}
           scroll={{ x: 900 }}
+          locale={{
+            emptyText: '暂无打印机数据'
+          }}
         />
       </Card>
 
@@ -341,7 +376,7 @@ const Printers: React.FC = () => {
           <Card>
             <Statistic
               title="总打印机数"
-              value={printers.length}
+              value={filteredPrinters.length}
               prefix={<PrinterOutlined />}
             />
           </Card>
@@ -350,7 +385,7 @@ const Printers: React.FC = () => {
           <Card>
             <Statistic
               title="就绪打印机"
-              value={printers.filter(printer => printer.status === 'ready').length}
+              value={filteredPrinters.filter(printer => printer.status === 'ready').length}
               prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
               valueStyle={{ color: '#52c41a' }}
             />
@@ -360,7 +395,7 @@ const Printers: React.FC = () => {
           <Card>
             <Statistic
               title="正在打印"
-              value={printers.filter(printer => printer.status === 'printing').length}
+              value={filteredPrinters.filter(printer => printer.status === 'printing').length}
               prefix={<PlayCircleOutlined style={{ color: '#1890ff' }} />}
               valueStyle={{ color: '#1890ff' }}
             />
@@ -370,7 +405,7 @@ const Printers: React.FC = () => {
           <Card>
             <Statistic
               title="异常打印机"
-              value={printers.filter(printer => printer.status === 'error').length}
+              value={filteredPrinters.filter(printer => printer.status === 'error').length}
               prefix={<ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />}
               valueStyle={{ color: '#ff4d4f' }}
             />

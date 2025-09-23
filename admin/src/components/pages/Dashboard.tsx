@@ -26,21 +26,21 @@ interface DashboardStats {
 interface PrinterStatus {
   id: string;
   name: string;
-  location: string;
-  status: 'online' | 'offline' | 'printing' | 'error';
-  paperLevel: number;
-  inkLevel: number;
+  location?: string;
+  status: 'ready' | 'printing' | 'error' | 'offline';
+  edge_node_id: string;
+  model: string;
   key?: string;
 }
 
 interface PrintJob {
   id: string;
-  fileName: string;
-  user: string;
-  printer: string;
-  status: 'pending' | 'printing' | 'completed' | 'failed';
-  createdAt: string;
-  pages: number;
+  name: string;
+  user_name: string;
+  printer_id: string;
+  status: 'pending' | 'printing' | 'completed' | 'failed' | 'cancelled';
+  created_at: string;
+  page_count: number;
   key?: string;
 }
 
@@ -64,31 +64,47 @@ class DashboardService {
   async getStats(): Promise<DashboardStats> {
     try {
       const token = await this.getToken();
-      const response = await fetch('/api/v1/admin/dashboard/stats', {
-        headers: {
-          ...(token && { 'Authorization': `Bearer ${token}` }),
-        },
-      });
       
-      if (response.ok) {
-        const result = await response.json();
-        return result.data;
-      }
+      // 并行获取各种统计数据
+      const [printersResponse, edgeNodesResponse, printJobsResponse] = await Promise.all([
+        fetch('/api/v1/admin/printers', {
+          headers: { ...(token && { 'Authorization': `Bearer ${token}` }) },
+        }),
+        fetch('/api/v1/admin/edge-nodes', {
+          headers: { ...(token && { 'Authorization': `Bearer ${token}` }) },
+        }),
+        fetch('/api/v1/admin/print-jobs', {
+          headers: { ...(token && { 'Authorization': `Bearer ${token}` }) },
+        })
+      ]);
+      
+      const printersResult = printersResponse.ok ? await printersResponse.json() : null;
+      const edgeNodesResult = edgeNodesResponse.ok ? await edgeNodesResponse.json() : null;
+      const printJobsResult = printJobsResponse.ok ? await printJobsResponse.json() : null;
+      
+      const printers = printersResult?.data?.items || [];
+      const edgeNodes = edgeNodesResult?.data?.items || [];
+      const printJobs = printJobsResult?.data?.items || [];
+      
+      // 计算统计数据
+      const onlinePrinters = printers.filter((p: any) => p.status === 'ready' || p.status === 'printing').length;
+      const onlineEdgeNodes = edgeNodes.filter((e: any) => e.status === 'online').length;
+      const completedJobs = printJobs.filter((j: any) => j.status === 'completed').length;
+      
+      return {
+        totalPrinters: printers.length,
+        onlinePrinters,
+        totalEdgeNodes: edgeNodes.length,
+        onlineEdgeNodes,
+        totalPrintJobs: printJobs.length,
+        completedJobs,
+        totalUsers: 0, // 暂时没有用户统计API
+        activeUsers: 0,
+      };
     } catch (error) {
       console.error('获取统计数据失败:', error);
+      throw error;
     }
-    
-    // 返回模拟数据作为fallback
-    return {
-      totalPrinters: 12,
-      onlinePrinters: 9,
-      totalEdgeNodes: 5,
-      onlineEdgeNodes: 4,
-      totalPrintJobs: 156,
-      completedJobs: 142,
-      totalUsers: 48,
-      activeUsers: 23,
-    };
   }
 
   async getPrinters(): Promise<PrinterStatus[]> {
@@ -102,53 +118,20 @@ class DashboardService {
       
       if (response.ok) {
         const result = await response.json();
-        return result.data;
+        return result.data.items || [];
       }
     } catch (error) {
       console.error('获取打印机列表失败:', error);
+      throw error;
     }
     
-    // 返回模拟数据作为fallback
-    return [
-      {
-        id: '1',
-        name: 'HP LaserJet Pro M404n',
-        location: '办公室 A-101',
-        status: 'online',
-        paperLevel: 85,
-        inkLevel: 60,
-      },
-      {
-        id: '2',
-        name: 'Canon PIXMA G3020',
-        location: '办公室 B-205',
-        status: 'printing',
-        paperLevel: 45,
-        inkLevel: 30,
-      },
-      {
-        id: '3',
-        name: 'Epson EcoTank L3150',
-        location: '会议室 C-301',
-        status: 'offline',
-        paperLevel: 20,
-        inkLevel: 80,
-      },
-      {
-        id: '4',
-        name: 'Brother HL-L2350DW',
-        location: '前台接待',
-        status: 'error',
-        paperLevel: 0,
-        inkLevel: 15,
-      },
-    ];
+    return [];
   }
 
   async getPrintJobs(): Promise<{ jobs: PrintJob[]; total: number }> {
     try {
       const token = await this.getToken();
-      const response = await fetch('/api/v1/admin/print-jobs?page=1&pageSize=5', {
+      const response = await fetch('/api/v1/admin/print-jobs?page=1&page_size=5', {
         headers: {
           ...(token && { 'Authorization': `Bearer ${token}` }),
         },
@@ -156,78 +139,25 @@ class DashboardService {
       
       if (response.ok) {
         const result = await response.json();
-        return result.data;
+        return {
+          jobs: result?.data?.items || [],
+          total: result?.data?.total || 0
+        };
       }
     } catch (error) {
       console.error('获取打印任务列表失败:', error);
+      throw error;
     }
     
-    // 返回模拟数据作为fallback
-    return {
-      jobs: [
-        {
-          id: 'JOB-2024-001',
-          fileName: '合同文件.pdf',
-          user: '张三',
-          printer: 'HP LaserJet Pro M404n',
-          status: 'completed',
-          createdAt: '2024-01-15 10:30',
-          pages: 5,
-        },
-        {
-          id: 'JOB-2024-002',
-          fileName: '报告.docx',
-          user: '李四',
-          printer: 'Canon PIXMA G3020',
-          status: 'printing',
-          createdAt: '2024-01-15 11:15',
-          pages: 12,
-        },
-        {
-          id: 'JOB-2024-003',
-          fileName: '图表分析.xlsx',
-          user: '王五',
-          printer: 'Epson EcoTank L3150',
-          status: 'pending',
-          createdAt: '2024-01-15 11:45',
-          pages: 3,
-        },
-        {
-          id: 'JOB-2024-004',
-          fileName: '项目计划.pptx',
-          user: '赵六',
-          printer: 'Brother HL-L2350DW',
-          status: 'failed',
-          createdAt: '2024-01-15 12:00',
-          pages: 20,
-        },
-      ],
-      total: 4,
-    };
+    return { jobs: [], total: 0 };
   }
 
   async getPrintJobTrends(): Promise<{ dates: string[]; completed: number[]; failed: number[] }> {
-    try {
-      const token = await this.getToken();
-      const response = await fetch('/api/v1/admin/dashboard/print-job-trends?days=7', {
-        headers: {
-          ...(token && { 'Authorization': `Bearer ${token}` }),
-        },
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        return result.data;
-      }
-    } catch (error) {
-      console.error('获取打印任务趋势失败:', error);
-    }
-    
-    // 返回模拟数据作为fallback
+    // 暂时返回空数据，趋势图功能待后续开发
     return {
-      dates: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
-      completed: [12, 18, 15, 22, 28, 16, 20],
-      failed: [2, 1, 3, 2, 1, 4, 2],
+      dates: [],
+      completed: [],
+      failed: [],
     };
   }
 }
@@ -330,7 +260,7 @@ const Dashboard: React.FC = () => {
 
       } catch (error) {
         console.error('加载 Dashboard 数据失败:', error);
-        // 不显示错误消息，因为有 fallback 数据
+        message.error('加载 Dashboard 数据失败，请稍后重试');
       } finally {
         setLoading(false);
       }
@@ -341,7 +271,7 @@ const Dashboard: React.FC = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'online': return 'success';
+      case 'ready': return 'success';
       case 'printing': return 'processing';
       case 'offline': return 'default';
       case 'error': return 'error';
@@ -355,6 +285,7 @@ const Dashboard: React.FC = () => {
       case 'printing': return 'processing';
       case 'pending': return 'warning';
       case 'failed': return 'error';
+      case 'cancelled': return 'default';
       default: return 'default';
     }
   };
@@ -381,24 +312,10 @@ const Dashboard: React.FC = () => {
       width: 80,
       render: (status: string) => (
         <Tag color={getStatusColor(status)} style={{ fontSize: '11px', padding: '0 4px' }}>
-          {status === 'online' ? '在线' :
+          {status === 'ready' ? '就绪' :
            status === 'printing' ? '打印中' :
            status === 'offline' ? '离线' : '错误'}
         </Tag>
-      ),
-    },
-    {
-      title: '纸张',
-      dataIndex: 'paperLevel',
-      key: 'paperLevel',
-      width: 80,
-      render: (level: number) => (
-        <Progress 
-          percent={level} 
-          size="small" 
-          showInfo={false}
-          strokeColor={level > 20 ? '#52c41a' : '#ff4d4f'}
-        />
       ),
     },
   ];
@@ -406,15 +323,15 @@ const Dashboard: React.FC = () => {
   const jobColumns = [
     {
       title: '文件名',
-      dataIndex: 'fileName',
-      key: 'fileName',
+      dataIndex: 'name',
+      key: 'name',
       ellipsis: true,
       width: 120,
     },
     {
       title: '用户',
-      dataIndex: 'user',
-      key: 'user',
+      dataIndex: 'user_name',
+      key: 'user_name',
       width: 60,
       ellipsis: true,
     },
@@ -427,14 +344,16 @@ const Dashboard: React.FC = () => {
         <Tag color={getJobStatusColor(status)} style={{ fontSize: '11px', padding: '0 4px' }}>
           {status === 'completed' ? '完成' :
            status === 'printing' ? '打印中' :
-           status === 'pending' ? '等待' : '失败'}
+           status === 'pending' ? '等待' : 
+           status === 'failed' ? '失败' :
+           status === 'cancelled' ? '已取消' : status}
         </Tag>
       ),
     },
     {
       title: '页数',
-      dataIndex: 'pages',
-      key: 'pages',
+      dataIndex: 'page_count',
+      key: 'page_count',
       width: 50,
     },
   ];
