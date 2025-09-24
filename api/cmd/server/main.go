@@ -166,6 +166,16 @@ func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandl
 			}
 		}
 
+		// 第三方打印API - 需要 print:submit 权限
+		printGroup := apiV1Group.Group("/print-jobs", middleware.OAuth2ResourceServer("print:submit"))
+		{
+			printGroup.POST("", printJobHandler.CreatePrintJob)
+			printGroup.GET("/:id", printJobHandler.GetPrintJob)
+		}
+
+		// 第三方打印机列表API - 需要 print:submit 权限
+		apiV1Group.GET("/printers", middleware.OAuth2ResourceServer("print:submit"), printerHandler.ListPrinters)
+
 		// Edge Node API - 需要 edge:* scope
 		edgeGroup := apiV1Group.Group("/edge")
 		{

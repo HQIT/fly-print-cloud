@@ -27,8 +27,8 @@ type OAuth2TokenInfo struct {
 	} `json:"resource_access,omitempty"`                           // Keycloak client roles
 }
 
-// OAuth2ResourceServer OAuth2 资源服务器中间件
-// 验证 Bearer token 和 scope 权限
+// OAuth2ResourceServer OAuth2 资源服务器中间件（AND逻辑）
+// 验证 Bearer token 和 scope 权限，需要拥有所有指定权限
 func OAuth2ResourceServer(requiredScopes ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 获取 Authorization header
@@ -278,7 +278,7 @@ func validateScopes(userRoles []string, requiredScopes []string) bool {
 		return true
 	}
 	
-	// 检查是否包含所有必需的权限
+	// 检查是否包含所有必需的权限（AND逻辑）
 	for _, requiredScope := range requiredScopes {
 		if !contains(userRoles, requiredScope) {
 			return false
@@ -286,6 +286,7 @@ func validateScopes(userRoles []string, requiredScopes []string) bool {
 	}
 	return true
 }
+
 
 // removeDuplicates 去除重复的角色
 func removeDuplicates(roles []string) []string {

@@ -188,7 +188,6 @@ func (db *DB) InitTables() error {
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		name VARCHAR(200) NOT NULL,
 		status VARCHAR(20) NOT NULL DEFAULT 'pending',
-		priority INTEGER DEFAULT 5,
 		
 		-- 关联信息
 		printer_id UUID REFERENCES printers(id) ON DELETE CASCADE,
@@ -197,6 +196,7 @@ func (db *DB) InitTables() error {
 		
 		-- 任务信息
 		file_path VARCHAR(500),
+		file_url VARCHAR(1000),
 		file_size BIGINT,
 		page_count INTEGER,
 		copies INTEGER DEFAULT 1,

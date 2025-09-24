@@ -84,8 +84,7 @@ type PrinterCapabilities struct {
 type PrintJob struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
-	Status       string    `json:"status"`        // pending/printing/completed/failed/cancelled
-	Priority     int       `json:"priority"`      // 优先级 1-10
+	Status       string    `json:"status"`        // pending/downloading/printing/completed/failed/cancelled
 	
 	// 关联信息
 	PrinterID    string    `json:"printer_id"`
@@ -93,7 +92,8 @@ type PrintJob struct {
 	UserName     string    `json:"user_name"`     // 提交用户名
 	
 	// 任务信息
-	FilePath     string    `json:"file_path"`     // 文件路径
+	FilePath     string    `json:"file_path"`     // 文件路径（本地文件）
+	FileURL      string    `json:"file_url"`      // 文件URL（第三方API使用）
 	FileSize     int64     `json:"file_size"`     // 文件大小
 	PageCount    int       `json:"page_count"`    // 页数
 	Copies       int       `json:"copies"`        // 份数

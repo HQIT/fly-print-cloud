@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -22,24 +25,23 @@ func NewPrintJobHandler(printJobRepo *database.PrintJobRepository) *PrintJobHand
 
 // CreatePrintJobRequest 创建打印任务请求
 type CreatePrintJobRequest struct {
-	Name         string `json:"name" binding:"required"`
+	Name         string `json:"name"`                         // 可选，不提供时自动生成
 	PrinterID    string `json:"printer_id" binding:"required"`
-	FilePath     string `json:"file_path" binding:"required"`
-	FileSize     int64  `json:"file_size" binding:"required"`
-	PageCount    int    `json:"page_count" binding:"required"`
-	Copies       int    `json:"copies" binding:"min=1"`
+	FilePath     string `json:"file_path"`                    // 本地文件路径
+	FileURL      string `json:"file_url"`                     // 文件URL
+	FileSize     int64  `json:"file_size"`                    // 可选
+	PageCount    int    `json:"page_count"`                   // 可选
+	Copies       int    `json:"copies" binding:"omitempty,min=1"` // 可选，默认1
 	PaperSize    string `json:"paper_size"`
 	ColorMode    string `json:"color_mode"`
 	DuplexMode   string `json:"duplex_mode"`
-	Priority     int    `json:"priority" binding:"min=1,max=10"`
-	MaxRetries   int    `json:"max_retries"`
+	MaxRetries   int    `json:"max_retries"`                  // 可选，默认3
 }
 
 // UpdatePrintJobRequest 更新打印任务请求
 type UpdatePrintJobRequest struct {
 	Name         *string `json:"name,omitempty"`
 	Status       *string `json:"status,omitempty"`
-	Priority     *int    `json:"priority,omitempty"`
 	FilePath     *string `json:"file_path,omitempty"`
 	FileSize     *int64  `json:"file_size,omitempty"`
 	PageCount    *int    `json:"page_count,omitempty"`
@@ -60,8 +62,14 @@ func (h *PrintJobHandler) CreatePrintJob(c *gin.Context) {
 		return
 	}
 
+	// 验证文件路径或URL至少有一个
+	if req.FilePath == "" && req.FileURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "必须提供file_path或file_url"})
+		return
+	}
+
 	// 从OAuth2认证中获取用户信息
-	userID, exists := c.Get("user_id")
+	userID, exists := c.Get("external_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
 		return
@@ -73,14 +81,34 @@ func (h *PrintJobHandler) CreatePrintJob(c *gin.Context) {
 		return
 	}
 
+	// 自动生成任务名称
+	jobName := req.Name
+	if jobName == "" {
+		if req.FileURL != "" {
+			// 从URL提取文件名
+			parts := strings.Split(req.FileURL, "/")
+			filename := parts[len(parts)-1]
+			if filename != "" {
+				jobName = filename
+			} else {
+				jobName = fmt.Sprintf("打印任务_%s", time.Now().Format("20060102_150405"))
+			}
+		} else if req.FilePath != "" {
+			// 从文件路径提取文件名
+			jobName = filepath.Base(req.FilePath)
+		} else {
+			jobName = fmt.Sprintf("打印任务_%s", time.Now().Format("20060102_150405"))
+		}
+	}
+
 	job := &models.PrintJob{
-		Name:         req.Name,
+		Name:         jobName,
 		Status:       "pending",
-		Priority:     req.Priority,
 		PrinterID:    req.PrinterID,
 		UserID:       userID.(string),
 		UserName:     userName.(string),
 		FilePath:     req.FilePath,
+		FileURL:      req.FileURL,
 		FileSize:     req.FileSize,
 		PageCount:    req.PageCount,
 		Copies:       req.Copies,
@@ -92,9 +120,6 @@ func (h *PrintJobHandler) CreatePrintJob(c *gin.Context) {
 	}
 
 	// 设置默认值
-	if job.Priority == 0 {
-		job.Priority = 5
-	}
 	if job.Copies == 0 {
 		job.Copies = 1
 	}
@@ -193,9 +218,6 @@ func (h *PrintJobHandler) UpdatePrintJob(c *gin.Context) {
 		if (*req.Status == "completed" || *req.Status == "failed" || *req.Status == "cancelled") && job.EndTime.IsZero() {
 			job.EndTime = time.Now()
 		}
-	}
-	if req.Priority != nil {
-		job.Priority = *req.Priority
 	}
 	if req.FilePath != nil {
 		job.FilePath = *req.FilePath
