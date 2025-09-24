@@ -142,12 +142,13 @@ func (m *ConnectionManager) GetConnectionCount() int {
 
 
 // DispatchPrintJob 分发打印任务到指定Edge Node
-func (m *ConnectionManager) DispatchPrintJob(nodeID string, job *models.PrintJob) error {
+func (m *ConnectionManager) DispatchPrintJob(nodeID string, job *models.PrintJob, printerName string) error {
 	// 构造打印任务数据
 	printJobData := PrintJobData{
 		JobID:       job.ID,
 		Name:        job.Name,
 		PrinterID:   job.PrinterID,
+		PrinterName: printerName,
 		FilePath:    job.FilePath,
 		FileURL:     job.FileURL,
 		FileSize:    job.FileSize,

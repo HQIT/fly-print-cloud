@@ -94,8 +94,16 @@ func (h *PrintJobHandler) CreatePrintJob(c *gin.Context) {
 			// 从URL提取文件名
 			parts := strings.Split(req.FileURL, "/")
 			filename := parts[len(parts)-1]
-			if filename != "" {
+			// 去掉查询参数
+			if idx := strings.Index(filename, "?"); idx != -1 {
+				filename = filename[:idx]
+			}
+			// 限制长度，避免超过数据库字段限制
+			if filename != "" && len(filename) <= 150 {
 				jobName = filename
+			} else if filename != "" {
+				// 如果文件名太长，截取前150个字符
+				jobName = filename[:150]
 			} else {
 				jobName = fmt.Sprintf("打印任务_%s", time.Now().Format("20060102_150405"))
 			}
@@ -154,7 +162,7 @@ func (h *PrintJobHandler) CreatePrintJob(c *gin.Context) {
 	}
 
 	// 分发任务到Edge Node
-	err = h.wsManager.DispatchPrintJob(printer.EdgeNodeID, job)
+	err = h.wsManager.DispatchPrintJob(printer.EdgeNodeID, job, printer.Name)
 	if err != nil {
 		log.Printf("Failed to dispatch print job %s to node %s: %v", job.ID, printer.EdgeNodeID, err)
 		// 任务已创建，但分发失败，保持pending状态

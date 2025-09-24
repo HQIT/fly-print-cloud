@@ -66,11 +66,11 @@ func (h *WebSocketHandler) HandleConnection(c *gin.Context) {
 		return
 	}
 
-	// 从 token 或 query parameter 获取 node_id
-	nodeID := h.extractNodeIDFromTokenInfo(tokenInfo)
+	// 优先从 query parameter 获取 node_id
+	nodeID := c.Query("node_id")
 	if nodeID == "" {
-		// 如果 token 中没有 node_id，尝试从 query parameter 获取
-		nodeID = c.Query("node_id")
+		// 如果 URL 参数中没有 node_id，尝试从 token 获取
+		nodeID = h.extractNodeIDFromTokenInfo(tokenInfo)
 		if nodeID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "missing node_id"})
 			return

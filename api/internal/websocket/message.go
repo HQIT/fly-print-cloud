@@ -79,6 +79,7 @@ type PrintJobData struct {
 	JobID       string `json:"job_id"`
 	Name        string `json:"name"`
 	PrinterID   string `json:"printer_id"`
+	PrinterName string `json:"printer_name"`
 	FilePath    string `json:"file_path,omitempty"`
 	FileURL     string `json:"file_url,omitempty"`
 	FileSize    int64  `json:"file_size"`
