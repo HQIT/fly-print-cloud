@@ -25,23 +25,25 @@ const (
 
 // Connection 表示单个 WebSocket 连接
 type Connection struct {
-	NodeID       string
-	Conn         *websocket.Conn
-	Send         chan []byte
-	Manager      *ConnectionManager
-	PrinterRepo  *database.PrinterRepository
-	EdgeNodeRepo *database.EdgeNodeRepository
+	NodeID         string
+	Conn           *websocket.Conn
+	Send           chan []byte
+	Manager        *ConnectionManager
+	PrinterRepo    *database.PrinterRepository
+	EdgeNodeRepo   *database.EdgeNodeRepository
+	PrintJobRepo   *database.PrintJobRepository
 }
 
 // NewConnection 创建新连接
-func NewConnection(nodeID string, conn *websocket.Conn, manager *ConnectionManager, printerRepo *database.PrinterRepository, edgeNodeRepo *database.EdgeNodeRepository) *Connection {
+func NewConnection(nodeID string, conn *websocket.Conn, manager *ConnectionManager, printerRepo *database.PrinterRepository, edgeNodeRepo *database.EdgeNodeRepository, printJobRepo *database.PrintJobRepository) *Connection {
 	return &Connection{
-		NodeID:       nodeID,
-		Conn:         conn,
-		Send:         make(chan []byte, 256),
-		Manager:      manager,
-		PrinterRepo:  printerRepo,
-		EdgeNodeRepo: edgeNodeRepo,
+		NodeID:         nodeID,
+		Conn:           conn,
+		Send:           make(chan []byte, 256),
+		Manager:        manager,
+		PrinterRepo:    printerRepo,
+		EdgeNodeRepo:   edgeNodeRepo,
+		PrintJobRepo:   printJobRepo,
 	}
 }
 
@@ -217,8 +219,32 @@ func (c *Connection) handlePrinterStatus(msg *Message) {
 
 // handleJobUpdate 处理任务状态更新
 func (c *Connection) handleJobUpdate(msg *Message) {
-	// TODO: 更新打印任务状态到数据库
-	log.Printf("Job update from node %s", c.NodeID)
+	log.Printf("Processing job update from node %s", c.NodeID)
+	
+	// 解析任务状态数据
+	var jobData JobUpdateData
+	dataBytes, err := json.Marshal(msg.Data)
+	if err != nil {
+		log.Printf("Failed to marshal job update data from node %s: %v", c.NodeID, err)
+		return
+	}
+	
+	if err := json.Unmarshal(dataBytes, &jobData); err != nil {
+		log.Printf("Failed to parse job update data from node %s: %v", c.NodeID, err)
+		return
+	}
+	
+	log.Printf("Job update data: job_id=%s, status=%s, progress=%d", 
+		jobData.JobID, jobData.Status, jobData.Progress)
+	
+	// 更新数据库中的任务状态
+	if err := c.PrintJobRepo.UpdateJobStatus(jobData.JobID, jobData.Status, jobData.Progress); err != nil {
+		log.Printf("Failed to update job %s status: %v", jobData.JobID, err)
+		return
+	}
+	
+	log.Printf("Successfully updated job %s status to %s (progress: %d%%)", 
+		jobData.JobID, jobData.Status, jobData.Progress)
 }
 
 

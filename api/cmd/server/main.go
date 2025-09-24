@@ -46,7 +46,7 @@ func main() {
 
 	// 初始化 WebSocket 管理器
 	wsManager := websocket.NewConnectionManager()
-	wsHandler := websocket.NewWebSocketHandler(wsManager, printerRepo, edgeNodeRepo)
+	wsHandler := websocket.NewWebSocketHandler(wsManager, printerRepo, edgeNodeRepo, printJobRepo)
 
 	// 初始化处理器
 	userHandler := handlers.NewUserHandler(userRepo)

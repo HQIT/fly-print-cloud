@@ -215,3 +215,16 @@ func (r *PrintJobRepository) GetEdgeNodeIDByPrintJob(jobID string) (string, erro
 
 	return edgeNodeID, nil
 }
+
+// UpdateJobStatus 更新打印任务状态和进度
+func (r *PrintJobRepository) UpdateJobStatus(jobID, status string, progress int) error {
+	query := `
+		UPDATE print_jobs SET 
+			status = $2, 
+			updated_at = $3
+		WHERE id = $1`
+
+	now := time.Now()
+	_, err := r.db.DB.Exec(query, jobID, status, now)
+	return err
+}
