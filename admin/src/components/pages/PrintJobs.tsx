@@ -1,37 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Tag, Space, Row, Col, Statistic, Select, DatePicker, Button, message } from 'antd';
+import { Card, Table, Tag, Space, Button, Select, Input, message, Popconfirm } from 'antd';
 import { 
-  CheckCircleOutlined,
-  ExclamationCircleOutlined,
-  ClockCircleOutlined,
-  PlayCircleOutlined,
-  FileTextOutlined,
   ReloadOutlined,
-  StopOutlined
+  SearchOutlined,
+  DeleteOutlined,
+  FileTextOutlined,
+  UserOutlined,
+  PrinterOutlined
 } from '@ant-design/icons';
 
-const { RangePicker } = DatePicker;
-const { Option } = Select;
-
-// 打印任务接口（适配后端数据模型）
+// 打印任务接口定义
 interface PrintJob {
   id: string;
-  name: string; // 后端字段名
-  user_name: string; // 后端字段名
-  printer_id: string; // 后端字段名
-  status: 'pending' | 'printing' | 'completed' | 'failed' | 'cancelled';
-  created_at: string; // 后端字段名
-  page_count: number; // 后端字段名
+  name: string;
+  user_name: string;
+  printer_id: string;
+  status: 'pending' | 'dispatched' | 'downloading' | 'printing' | 'completed' | 'failed' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+  page_count: number;
   file_path: string;
+  file_url: string;
   file_size: number;
   copies: number;
-  priority: number;
+  paper_size: string;
+  color_mode: string;
+  duplex_mode: string;
+  start_time: string;
+  end_time: string;
+  error_message: string;
+  retry_count: number;
+  max_retries: number;
   key?: string;
 }
 
 // Print Jobs 服务类
 class PrintJobsService {
-  private async getToken(): Promise<string | null> {
+  async getToken(): Promise<string | null> {
     try {
       const response = await fetch('/auth/me');
       const result = await response.json();
@@ -46,7 +51,7 @@ class PrintJobsService {
     return null;
   }
 
-  async getPrintJobs(page = 1, pageSize = 10, status?: string): Promise<{ jobs: PrintJob[]; total: number }> {
+  async getPrintJobs(page = 1, pageSize = 10, status = ''): Promise<{ jobs: PrintJob[]; total: number; page: number; pageSize: number }> {
     try {
       const token = await this.getToken();
       let url = `/api/v1/admin/print-jobs?page=${page}&pageSize=${pageSize}`;
@@ -62,121 +67,23 @@ class PrintJobsService {
       
       if (response.ok) {
         const result = await response.json();
-        return result.data;
+        return {
+          jobs: result?.jobs || [],
+          total: result?.pagination?.total || result?.jobs?.length || 0,
+          page: page,
+          pageSize: pageSize
+        };
       }
     } catch (error) {
       console.error('获取打印任务列表失败:', error);
     }
     
-    // 返回模拟数据作为fallback（适配后端格式）
+    // API调用失败时返回空数据
     return {
-      jobs: [
-        {
-          id: 'JOB-2024-001',
-          name: '合同文件.pdf',
-          user_name: '张三',
-          printer_id: 'printer-1',
-          status: 'completed',
-          created_at: '2024-01-15T10:30:00Z',
-          page_count: 5,
-          file_path: '/uploads/contract.pdf',
-          file_size: 1024000,
-          copies: 1,
-          priority: 5,
-        },
-        {
-          id: 'JOB-2024-002',
-          name: '报告.docx',
-          user_name: '李四',
-          printer_id: 'printer-2',
-          status: 'printing',
-          created_at: '2024-01-15T11:15:00Z',
-          page_count: 12,
-          file_path: '/uploads/report.docx',
-          file_size: 2048000,
-          copies: 2,
-          priority: 7,
-        },
-        {
-          id: 'JOB-2024-003',
-          name: '图表分析.xlsx',
-          user_name: '王五',
-          printer_id: 'printer-3',
-          status: 'pending',
-          created_at: '2024-01-15T11:45:00Z',
-          page_count: 3,
-          file_path: '/uploads/analysis.xlsx',
-          file_size: 512000,
-          copies: 1,
-          priority: 3,
-        },
-        {
-          id: 'JOB-2024-004',
-          name: '项目计划.pptx',
-          user_name: '赵六',
-          printer_id: 'printer-4',
-          status: 'failed',
-          created_at: '2024-01-15T12:00:00Z',
-          page_count: 20,
-          file_path: '/uploads/project.pptx',
-          file_size: 4096000,
-          copies: 3,
-          priority: 8,
-        },
-        {
-          id: 'JOB-2024-005',
-          name: '财务报表.pdf',
-          user_name: '钱七',
-          printer_id: 'printer-5',
-          status: 'completed',
-          created_at: '2024-01-15T09:30:00Z',
-          page_count: 8,
-          file_path: '/uploads/finance.pdf',
-          file_size: 1536000,
-          copies: 1,
-          priority: 6,
-        },
-        {
-          id: 'JOB-2024-006',
-          name: '会议纪要.docx',
-          user_name: '孙八',
-          printer_id: 'printer-6',
-          status: 'pending',
-          created_at: '2024-01-15T14:20:00Z',
-          page_count: 2,
-          file_path: '/uploads/meeting.docx',
-          file_size: 256000,
-          copies: 1,
-          priority: 4,
-        },
-        {
-          id: 'JOB-2024-007',
-          name: '设计图纸.pdf',
-          user_name: '周九',
-          printer_id: 'printer-1',
-          status: 'failed',
-          created_at: '2024-01-15T13:45:00Z',
-          page_count: 15,
-          file_path: '/uploads/design.pdf',
-          file_size: 8192000,
-          copies: 1,
-          priority: 9,
-        },
-        {
-          id: 'JOB-2024-008',
-          name: '产品手册.pdf',
-          user_name: '吴十',
-          printer_id: 'printer-2',
-          status: 'completed',
-          created_at: '2024-01-15T08:15:00Z',
-          page_count: 25,
-          file_path: '/uploads/manual.pdf',
-          file_size: 6144000,
-          copies: 2,
-          priority: 5,
-        },
-      ],
-      total: 8,
+      jobs: [],
+      total: 0,
+      page: page,
+      pageSize: pageSize
     };
   }
 }
@@ -199,65 +106,11 @@ const PrintJobs: React.FC = () => {
       const result = await printJobsService.getPrintJobs(page, size, status);
       setPrintJobs(result.jobs.map(job => ({ ...job, key: job.id })));
       setTotal(result.total);
+      setCurrentPage(page);
+      setPageSize(size);
     } catch (error) {
       console.error('加载打印任务失败:', error);
-      // 设置 fallback 数据
-        const fallbackJobs = [
-          {
-            id: 'JOB-2024-001',
-            name: '合同文件.pdf',
-            user_name: '张三',
-            printer_id: 'printer-1',
-            status: 'completed' as const,
-            created_at: '2024-01-15T10:30:00Z',
-            page_count: 5,
-            file_path: '/uploads/contract.pdf',
-            file_size: 1024000,
-            copies: 1,
-            priority: 5,
-          },
-          {
-            id: 'JOB-2024-002',
-            name: '报告.docx',
-            user_name: '李四',
-            printer_id: 'printer-2',
-            status: 'printing' as const,
-            created_at: '2024-01-15T11:15:00Z',
-            page_count: 12,
-            file_path: '/uploads/report.docx',
-            file_size: 2048000,
-            copies: 2,
-            priority: 7,
-          },
-          {
-            id: 'JOB-2024-003',
-            name: '图表分析.xlsx',
-            user_name: '王五',
-            printer_id: 'printer-3',
-            status: 'pending' as const,
-            created_at: '2024-01-15T11:45:00Z',
-            page_count: 3,
-            file_path: '/uploads/analysis.xlsx',
-            file_size: 512000,
-            copies: 1,
-            priority: 3,
-          },
-          {
-            id: 'JOB-2024-004',
-            name: '项目计划.pptx',
-            user_name: '赵六',
-            printer_id: 'printer-4',
-            status: 'failed' as const,
-            created_at: '2024-01-15T12:00:00Z',
-            page_count: 20,
-            file_path: '/uploads/project.pptx',
-            file_size: 4096000,
-            copies: 3,
-            priority: 8,
-          },
-        ];
-      setPrintJobs(fallbackJobs.map(job => ({ ...job, key: job.id })));
-      setTotal(fallbackJobs.length);
+      message.error('加载打印任务失败，请稍后重试');
     } finally {
       setLoading(false);
     }
@@ -265,117 +118,207 @@ const PrintJobs: React.FC = () => {
 
   useEffect(() => {
     loadPrintJobs(currentPage, pageSize, statusFilter);
-  }, [currentPage, pageSize, statusFilter]);
+  }, []);
 
-  const getStatusColor = (status: string) => {
+  // 状态标签映射
+  const getStatusTag = (status: string) => {
     switch (status) {
-      case 'completed': return 'success';
-      case 'printing': return 'processing';
-      case 'pending': return 'warning';
-      case 'failed': return 'error';
-      default: return 'default';
+      case 'pending':
+        return <Tag color="default">等待中</Tag>;
+      case 'dispatched':
+        return <Tag color="blue">已分发</Tag>;
+      case 'downloading':
+        return <Tag color="cyan">下载中</Tag>;
+      case 'printing':
+        return <Tag color="processing">打印中</Tag>;
+      case 'completed':
+        return <Tag color="success">已完成</Tag>;
+      case 'failed':
+        return <Tag color="error">失败</Tag>;
+      case 'cancelled':
+        return <Tag color="default">已取消</Tag>;
+      default:
+        return <Tag color="default">{status}</Tag>;
     }
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'completed': return '已完成';
-      case 'printing': return '打印中';
-      case 'pending': return '等待中';
-      case 'failed': return '失败';
-      default: return '未知';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed': return <CheckCircleOutlined />;
-      case 'printing': return <PlayCircleOutlined />;
-      case 'pending': return <ClockCircleOutlined />;
-      case 'failed': return <ExclamationCircleOutlined />;
-      default: return <ClockCircleOutlined />;
-    }
-  };
-
-  const handleStatusFilterChange = (value: string) => {
+  // 处理状态筛选
+  const handleStatusChange = (value: string) => {
     setStatusFilter(value);
     setCurrentPage(1);
+    loadPrintJobs(1, pageSize, value);
   };
 
+  // 处理分页变化
+  const handleTableChange = (page: number, size?: number) => {
+    const newSize = size || pageSize;
+    setCurrentPage(page);
+    setPageSize(newSize);
+    loadPrintJobs(page, newSize, statusFilter);
+  };
+
+  // 刷新数据
   const handleRefresh = () => {
     loadPrintJobs(currentPage, pageSize, statusFilter);
   };
 
+  // 删除任务
+  const handleDeleteJob = async (jobId: string) => {
+    try {
+      const token = await printJobsService.getToken();
+      const response = await fetch(`/api/v1/admin/print-jobs/${jobId}`, {
+        method: 'DELETE',
+        headers: {
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+      });
+      
+      if (response.ok) {
+        message.success('删除任务成功');
+        loadPrintJobs(currentPage, pageSize, statusFilter);
+      } else {
+        message.error('删除任务失败');
+      }
+    } catch (error) {
+      console.error('删除任务失败:', error);
+      message.error('删除任务失败');
+    }
+  };
+
+  // 取消任务
+  const handleCancelJob = async (jobId: string) => {
+    try {
+      const token = await printJobsService.getToken();
+      const response = await fetch(`/api/v1/admin/print-jobs/${jobId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+        body: JSON.stringify({ status: 'cancelled' }),
+      });
+      
+      if (response.ok) {
+        message.success('取消任务成功');
+        loadPrintJobs(currentPage, pageSize, statusFilter);
+      } else {
+        message.error('取消任务失败');
+      }
+    } catch (error) {
+      console.error('取消任务失败:', error);
+      message.error('取消任务失败');
+    }
+  };
+
+  // 表格列定义
   const columns = [
     {
-      title: '任务ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 130,
-      render: (text: string) => <code>{text}</code>,
-    },
-    {
-      title: '文件名',
+      title: '任务名称',
       dataIndex: 'name',
       key: 'name',
       width: 200,
-      ellipsis: true,
-      render: (text: string) => <strong>{text}</strong>,
+      render: (text: string) => (
+        <Space>
+          <FileTextOutlined />
+          <span title={text}>
+            {text && text.length > 30 ? `${text.substring(0, 30)}...` : text}
+          </span>
+        </Space>
+      ),
     },
     {
       title: '用户',
       dataIndex: 'user_name',
       key: 'user_name',
-      width: 100,
+      render: (text: string) => (
+        <Space>
+          <UserOutlined />
+          {text || '-'}
+        </Space>
+      ),
     },
     {
       title: '打印机ID',
       dataIndex: 'printer_id',
       key: 'printer_id',
-      width: 120,
-      ellipsis: true,
-      render: (text: string) => <code>{text}</code>,
+      render: (text: string) => (
+        <Space>
+          <PrinterOutlined />
+          {text ? text.substring(0, 8) + '...' : '-'}
+        </Space>
+      ),
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 120,
-      render: (status: string) => (
-        <Tag color={getStatusColor(status)} icon={getStatusIcon(status)}>
-          {getStatusText(status)}
-        </Tag>
-      ),
+      render: (status: string) => getStatusTag(status),
     },
     {
       title: '页数',
       dataIndex: 'page_count',
       key: 'page_count',
-      width: 80,
-      render: (pages: number) => `${pages} 页`,
+      render: (count: number) => count || '-',
+    },
+    {
+      title: '份数',
+      dataIndex: 'copies',
+      key: 'copies',
+      render: (copies: number) => copies || 1,
     },
     {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
-      width: 150,
-      render: (timestamp: string) => {
-        const date = new Date(timestamp);
+      render: (time: string) => {
+        if (!time) return '-';
+        const date = new Date(time);
         return date.toLocaleString('zh-CN');
+      },
+    },
+    {
+      title: '文件大小',
+      dataIndex: 'file_size',
+      key: 'file_size',
+      render: (size: number) => {
+        if (!size) return '-';
+        if (size < 1024) return `${size} B`;
+        if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+        return `${(size / (1024 * 1024)).toFixed(1)} MB`;
       },
     },
     {
       title: '操作',
       key: 'action',
       width: 150,
-      render: (record: PrintJob) => (
-        <Space>
-          <a onClick={() => message.info(`查看任务 ${record.id} 详情`)}>详情</a>
-          {record.status === 'pending' && (
-            <a onClick={() => message.info(`取消任务 ${record.id}`)}>取消</a>
+      render: (_, record: PrintJob) => (
+        <Space size="small">
+          {/* 取消任务 - 只有pending和dispatched状态可以取消 */}
+          {(record.status === 'pending' || record.status === 'dispatched') && (
+            <Popconfirm
+              title="确定要取消这个任务吗？"
+              onConfirm={() => handleCancelJob(record.id)}
+              okText="确定"
+              cancelText="取消"
+            >
+              <Button size="small" type="link">
+                取消
+              </Button>
+            </Popconfirm>
           )}
-          {record.status === 'failed' && (
-            <a onClick={() => message.info(`重试任务 ${record.id}`)}>重试</a>
+          
+          {/* 删除任务 - 只有completed、failed、cancelled状态可以删除 */}
+          {(record.status === 'completed' || record.status === 'failed' || record.status === 'cancelled') && (
+            <Popconfirm
+              title="确定要删除这个任务吗？"
+              onConfirm={() => handleDeleteJob(record.id)}
+              okText="确定"
+              cancelText="取消"
+            >
+              <Button size="small" type="link" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Popconfirm>
           )}
         </Space>
       ),
@@ -383,29 +326,42 @@ const PrintJobs: React.FC = () => {
   ];
 
   return (
-    <div>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ margin: 0 }}>打印任务管理</h2>
-        <Space>
-          <Select
-            placeholder="筛选状态"
-            style={{ width: 120 }}
-            allowClear
-            value={statusFilter || undefined}
-            onChange={handleStatusFilterChange}
-          >
-            <Option value="pending">等待中</Option>
-            <Option value="printing">打印中</Option>
-            <Option value="completed">已完成</Option>
-            <Option value="failed">失败</Option>
-          </Select>
-          <Button icon={<ReloadOutlined />} onClick={handleRefresh}>
-            刷新
-          </Button>
-        </Space>
-      </div>
-
+    <div style={{ padding: '24px' }}>
+      <h2>打印任务管理</h2>
+      
       <Card>
+        {/* 筛选和操作栏 */}
+        <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Space>
+            <Select
+              placeholder="选择状态筛选"
+              allowClear
+              style={{ width: 150 }}
+              value={statusFilter || undefined}
+              onChange={handleStatusChange}
+            >
+              <Select.Option value="pending">等待中</Select.Option>
+              <Select.Option value="dispatched">已分发</Select.Option>
+              <Select.Option value="downloading">下载中</Select.Option>
+              <Select.Option value="printing">打印中</Select.Option>
+              <Select.Option value="completed">已完成</Select.Option>
+              <Select.Option value="failed">失败</Select.Option>
+              <Select.Option value="cancelled">已取消</Select.Option>
+            </Select>
+          </Space>
+          
+          <Space>
+            <Button 
+              icon={<ReloadOutlined />} 
+              onClick={handleRefresh}
+              loading={loading}
+            >
+              刷新
+            </Button>
+          </Space>
+        </div>
+
+        {/* 打印任务表格 */}
         <Table
           columns={columns}
           dataSource={printJobs}
@@ -416,58 +372,16 @@ const PrintJobs: React.FC = () => {
             total: total,
             showSizeChanger: true,
             showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 个任务`,
-            onChange: (page, size) => {
-              setCurrentPage(page);
-              setPageSize(size || 10);
-            },
+            showTotal: (total, range) =>
+              `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+            onChange: handleTableChange,
+            onShowSizeChange: handleTableChange,
+            pageSizeOptions: ['10', '20', '50', '100'],
           }}
-          scroll={{ x: 1000 }}
+          size="middle"
+          scroll={{ x: 1200 }}
         />
       </Card>
-
-      {/* 统计信息 */}
-      <Row gutter={16} style={{ marginTop: 16 }}>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="总任务数"
-              value={printJobs.length}
-              prefix={<FileTextOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="已完成"
-              value={printJobs.filter(job => job.status === 'completed').length}
-              prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="进行中"
-              value={printJobs.filter(job => job.status === 'printing').length}
-              prefix={<PlayCircleOutlined style={{ color: '#1890ff' }} />}
-              valueStyle={{ color: '#1890ff' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="失败任务"
-              value={printJobs.filter(job => job.status === 'failed').length}
-              prefix={<ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />}
-              valueStyle={{ color: '#ff4d4f' }}
-            />
-          </Card>
-        </Col>
-      </Row>
     </div>
   );
 };

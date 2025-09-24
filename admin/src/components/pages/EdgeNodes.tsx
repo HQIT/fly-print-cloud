@@ -40,74 +40,27 @@ class EdgeNodesService {
   async getEdgeNodes(): Promise<EdgeNode[]> {
     try {
       const token = await this.getToken();
-      console.log('🔑 [DEBUG] Token获取结果:', token ? '成功' : '失败');
-      
       const response = await fetch('/api/v1/admin/edge-nodes', {
         headers: {
           ...(token && { 'Authorization': `Bearer ${token}` }),
         },
       });
       
-      console.log('🌐 [DEBUG] API响应状态:', response.status, response.statusText);
-      
       if (response.ok) {
         const result = await response.json();
-        console.log('📊 [DEBUG] API响应数据:', result);
+        console.log('🔄 [DEBUG] API响应数据:', result);
         
-        if (result.code === 200 && result.data && Array.isArray(result.data.items)) {
-          console.log('✅ [DEBUG] 成功获取Edge Nodes数据，数量:', result.data.items.length);
-          return result.data.items;
-        } else {
-          console.warn('⚠️ [DEBUG] API响应格式异常:', result);
-        }
+        // 适配后端数据格式：result.data.items
+        return result?.data?.items || [];
       } else {
-        const errorText = await response.text();
-        console.error('❌ [DEBUG] API调用失败:', response.status, errorText);
+        console.error('💥 [DEBUG] API响应状态:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('💥 [DEBUG] 网络请求异常:', error);
     }
     
-    console.log('🔄 [DEBUG] 使用fallback数据');
-    // 返回模拟数据作为fallback（适配后端格式）
-    return [
-      {
-        id: '1',
-        name: 'EdgeNode-Office-A',
-        location: '办公楼A',
-        status: 'online',
-        last_heartbeat: '2024-01-15T12:00:00Z',
-        version: 'v1.2.3',
-        printer_count: 3,
-      },
-      {
-        id: '2',
-        name: 'EdgeNode-Office-B',
-        location: '办公楼B',
-        status: 'online',
-        last_heartbeat: '2024-01-15T11:58:00Z',
-        version: 'v1.2.3',
-        printer_count: 2,
-      },
-      {
-        id: '3',
-        name: 'EdgeNode-Warehouse',
-        location: '仓库区',
-        status: 'offline',
-        last_heartbeat: '2024-01-15T09:30:00Z',
-        version: 'v1.2.2',
-        printer_count: 1,
-      },
-      {
-        id: '4',
-        name: 'EdgeNode-Reception',
-        location: '前台区域',
-        status: 'error',
-        last_heartbeat: '2024-01-15T08:45:00Z',
-        version: 'v1.2.3',
-        printer_count: 2,
-      },
-    ];
+    console.log('🔄 [DEBUG] API调用失败，返回空数据');
+    return [];
   }
 }
 
@@ -119,153 +72,166 @@ const EdgeNodes: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   // 加载边缘节点数据
-  useEffect(() => {
-    const loadEdgeNodes = async () => {
-      try {
-        setLoading(true);
-        const nodes = await edgeNodesService.getEdgeNodes();
-        setEdgeNodes(nodes.map(node => ({ ...node, key: node.id })));
-      } catch (error) {
-        console.error('加载边缘节点失败:', error);
-        // 设置 fallback 数据
-        const fallbackNodes = [
-          {
-            id: '1',
-            name: 'EdgeNode-Office-A',
-            location: '办公楼A',
-            status: 'online' as const,
-            last_heartbeat: '2024-01-15T12:00:00Z',
-            version: 'v1.2.3',
-            printer_count: 3,
-          },
-          {
-            id: '2',
-            name: 'EdgeNode-Office-B',
-            location: '办公楼B',
-            status: 'online' as const,
-            last_heartbeat: '2024-01-15T11:58:00Z',
-            version: 'v1.2.3',
-            printer_count: 2,
-          },
-          {
-            id: '3',
-            name: 'EdgeNode-Warehouse',
-            location: '仓库区',
-            status: 'offline' as const,
-            last_heartbeat: '2024-01-15T09:30:00Z',
-            version: 'v1.2.2',
-            printer_count: 1,
-          },
-          {
-            id: '4',
-            name: 'EdgeNode-Reception',
-            location: '前台区域',
-            status: 'error' as const,
-            last_heartbeat: '2024-01-15T08:45:00Z',
-            version: 'v1.2.3',
-            printer_count: 2,
-          },
-        ];
-        setEdgeNodes(fallbackNodes.map(node => ({ ...node, key: node.id })));
-      } finally {
-        setLoading(false);
-      }
-    };
+  const loadEdgeNodes = async () => {
+    try {
+      setLoading(true);
+      const nodes = await edgeNodesService.getEdgeNodes();
+      setEdgeNodes(nodes.map(node => ({ ...node, key: node.id })));
+    } catch (error) {
+      console.error('加载边缘节点失败:', error);
+      setEdgeNodes([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     loadEdgeNodes();
   }, []);
 
-  const getStatusColor = (status: string) => {
+  // 状态图标映射
+  const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'online': return 'success';
-      case 'offline': return 'default';
-      case 'error': return 'error';
-      default: return 'default';
+      case 'online':
+        return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+      case 'offline':
+        return <StopOutlined style={{ color: '#8c8c8c' }} />;
+      case 'error':
+        return <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />;
+      default:
+        return <StopOutlined style={{ color: '#8c8c8c' }} />;
     }
   };
 
-  const getStatusText = (status: string) => {
+  // 状态标签映射
+  const getStatusTag = (status: string) => {
     switch (status) {
-      case 'online': return '在线';
-      case 'offline': return '离线';
-      case 'error': return '错误';
-      default: return '未知';
+      case 'online':
+        return <Tag color="success">在线</Tag>;
+      case 'offline':
+        return <Tag color="default">离线</Tag>;
+      case 'error':
+        return <Tag color="error">错误</Tag>;
+      default:
+        return <Tag color="default">未知</Tag>;
     }
   };
 
+  // 表格列定义
   const columns = [
     {
       title: '节点名称',
       dataIndex: 'name',
       key: 'name',
-      render: (text: string) => <strong>{text}</strong>,
+      render: (text: string) => (
+        <Space>
+          <CloudServerOutlined />
+          {text}
+        </Space>
+      ),
     },
     {
       title: '位置',
       dataIndex: 'location',
       key: 'location',
+      render: (text: string) => text || '-',
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
       render: (status: string) => (
-        <Tag color={getStatusColor(status)} icon={
-          status === 'online' ? <CheckCircleOutlined /> :
-          status === 'error' ? <ExclamationCircleOutlined /> :
-          <StopOutlined />
-        }>
-          {getStatusText(status)}
-        </Tag>
-      ),
-    },
-    {
-      title: '版本',
-      dataIndex: 'version',
-      key: 'version',
-      render: (version: string) => <code>{version}</code>,
-    },
-    {
-      title: '管理打印机',
-      dataIndex: 'printer_count',
-      key: 'printer_count',
-      render: (count: number) => (
-        <span>
-          <PrinterOutlined style={{ marginRight: 4 }} />
-          {count || 0} 台
-        </span>
+        <Space>
+          {getStatusIcon(status)}
+          {getStatusTag(status)}
+        </Space>
       ),
     },
     {
       title: '最后心跳',
       dataIndex: 'last_heartbeat',
       key: 'last_heartbeat',
-      width: 150,
-      render: (timestamp: string) => {
-        const date = new Date(timestamp);
+      render: (time: string) => {
+        if (!time) return '-';
+        const date = new Date(time);
         return date.toLocaleString('zh-CN');
       },
     },
     {
-      title: '操作',
-      key: 'action',
-      width: 80,
-      render: (record: EdgeNode) => (
-        <a onClick={() => message.info(`查看节点 ${record.name} 详情`)}>详情</a>
+      title: '版本',
+      dataIndex: 'version',
+      key: 'version',
+      render: (text: string) => text || '-',
+    },
+    {
+      title: '打印机数量',
+      dataIndex: 'printer_count',
+      key: 'printer_count',
+      render: (count: number) => (
+        <Space>
+          <PrinterOutlined />
+          {count || 0}
+        </Space>
       ),
     },
   ];
 
-  return (
-    <div>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ margin: 0 }}>边缘节点管理</h2>
-        <Space>
-          <a onClick={() => window.location.reload()}>刷新</a>
-        </Space>
-      </div>
+  // 计算统计数据
+  const onlineNodes = edgeNodes.filter(node => node.status === 'online').length;
+  const offlineNodes = edgeNodes.filter(node => node.status === 'offline').length;
+  const errorNodes = edgeNodes.filter(node => node.status === 'error').length;
+  const totalPrinters = edgeNodes.reduce((sum, node) => sum + (node.printer_count || 0), 0);
 
-      <Card>
+  return (
+    <div style={{ padding: '24px' }}>
+      <h2>边缘节点管理</h2>
+      
+      {/* 统计卡片 */}
+      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+        <Col xs={12} sm={6}>
+          <Card>
+            <Statistic
+              title="总节点数"
+              value={edgeNodes.length}
+              prefix={<CloudServerOutlined />}
+              valueStyle={{ color: '#1890ff' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card>
+            <Statistic
+              title="在线节点"
+              value={onlineNodes}
+              prefix={<CheckCircleOutlined />}
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card>
+            <Statistic
+              title="离线节点"
+              value={offlineNodes}
+              prefix={<StopOutlined />}
+              valueStyle={{ color: '#8c8c8c' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card>
+            <Statistic
+              title="总打印机数"
+              value={totalPrinters}
+              prefix={<PrinterOutlined />}
+              valueStyle={{ color: '#722ed1' }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* 边缘节点列表 */}
+      <Card title="边缘节点列表">
         <Table
           columns={columns}
           dataSource={edgeNodes}
@@ -275,54 +241,12 @@ const EdgeNodes: React.FC = () => {
             pageSize: 10,
             showSizeChanger: true,
             showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 个节点`,
+            showTotal: (total, range) =>
+              `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
           }}
-          scroll={{ x: 800 }}
+          size="middle"
         />
       </Card>
-
-      {/* 统计信息 */}
-      <Row gutter={16} style={{ marginTop: 16 }}>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="总节点数"
-              value={edgeNodes.length}
-              prefix={<CloudServerOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="在线节点"
-              value={edgeNodes.filter(node => node.status === 'online').length}
-              prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="离线节点"
-              value={edgeNodes.filter(node => node.status === 'offline').length}
-              prefix={<StopOutlined style={{ color: '#8c8c8c' }} />}
-              valueStyle={{ color: '#8c8c8c' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="异常节点"
-              value={edgeNodes.filter(node => node.status === 'error').length}
-              prefix={<ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />}
-              valueStyle={{ color: '#ff4d4f' }}
-            />
-          </Card>
-        </Col>
-      </Row>
     </div>
   );
 };

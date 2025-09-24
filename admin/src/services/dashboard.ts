@@ -1,6 +1,4 @@
-import apiService, { ApiResponse } from './api';
-
-// Dashboard 数据接口
+// Dashboard 数据接口定义
 export interface DashboardStats {
   totalPrinters: number;
   onlinePrinters: number;
@@ -17,10 +15,9 @@ export interface PrinterStatus {
   name: string;
   location: string;
   status: 'online' | 'offline' | 'printing' | 'error';
-  paperLevel: number;
-  inkLevel: number;
-  lastSeen?: string;
-  model?: string;
+  paperLevel?: number;
+  inkLevel?: number;
+  key?: string;
 }
 
 export interface PrintJob {
@@ -30,21 +27,22 @@ export interface PrintJob {
   printer: string;
   status: 'pending' | 'printing' | 'completed' | 'failed';
   createdAt: string;
-  completedAt?: string;
   pages: number;
-  copies?: number;
-  priority?: 'low' | 'normal' | 'high';
+  key?: string;
 }
 
-export interface EdgeNode {
+export interface EdgeNodeStatus {
   id: string;
   name: string;
   location: string;
-  status: 'online' | 'offline' | 'error';
+  status: 'online' | 'offline';
   lastSeen: string;
   version: string;
   printerCount: number;
+  key?: string;
 }
+
+import apiService from './api';
 
 // Dashboard 服务类
 class DashboardService {
@@ -55,16 +53,16 @@ class DashboardService {
       return response.data;
     } catch (error) {
       console.error('获取统计数据失败:', error);
-      // 返回模拟数据作为fallback
+      // API调用失败时返回空数据
       return {
-        totalPrinters: 12,
-        onlinePrinters: 9,
-        totalEdgeNodes: 5,
-        onlineEdgeNodes: 4,
-        totalPrintJobs: 156,
-        completedJobs: 142,
-        totalUsers: 48,
-        activeUsers: 23,
+        totalPrinters: 0,
+        onlinePrinters: 0,
+        totalEdgeNodes: 0,
+        onlineEdgeNodes: 0,
+        totalPrintJobs: 0,
+        completedJobs: 0,
+        totalUsers: 0,
+        activeUsers: 0,
       };
     }
   }
@@ -79,52 +77,16 @@ class DashboardService {
       }));
     } catch (error) {
       console.error('获取打印机列表失败:', error);
-      // 返回模拟数据作为fallback
-      return [
-        {
-          id: '1',
-          name: 'HP LaserJet Pro M404n',
-          location: '办公室 A-101',
-          status: 'online',
-          paperLevel: 85,
-          inkLevel: 60,
-        },
-        {
-          id: '2',
-          name: 'Canon PIXMA G3020',
-          location: '办公室 B-205',
-          status: 'printing',
-          paperLevel: 45,
-          inkLevel: 30,
-        },
-        {
-          id: '3',
-          name: 'Epson EcoTank L3150',
-          location: '会议室 C-301',
-          status: 'offline',
-          paperLevel: 20,
-          inkLevel: 80,
-        },
-        {
-          id: '4',
-          name: 'Brother HL-L2350DW',
-          location: '前台接待',
-          status: 'error',
-          paperLevel: 0,
-          inkLevel: 15,
-        },
-      ];
+      return [];
     }
   }
 
   // 获取打印任务列表
   async getPrintJobs(page = 1, pageSize = 10): Promise<{ jobs: PrintJob[]; total: number }> {
     try {
-      const response = await apiService.get<{ jobs: PrintJob[]; total: number }>(
-        `/admin/print-jobs?page=${page}&pageSize=${pageSize}`
-      );
+      const response = await apiService.get<{ data: PrintJob[]; total: number }>(`/admin/print-jobs?page=${page}&pageSize=${pageSize}`);
       return {
-        jobs: response.data.jobs.map(job => ({
+        jobs: response.data.data.map(job => ({
           ...job,
           key: job.id, // 为 Ant Design Table 添加 key
         })),
@@ -132,82 +94,24 @@ class DashboardService {
       };
     } catch (error) {
       console.error('获取打印任务列表失败:', error);
-      // 返回模拟数据作为fallback
       return {
-        jobs: [
-          {
-            id: 'JOB-2024-001',
-            fileName: '合同文件.pdf',
-            user: '张三',
-            printer: 'HP LaserJet Pro M404n',
-            status: 'completed',
-            createdAt: '2024-01-15 10:30',
-            pages: 5,
-          },
-          {
-            id: 'JOB-2024-002',
-            fileName: '报告.docx',
-            user: '李四',
-            printer: 'Canon PIXMA G3020',
-            status: 'printing',
-            createdAt: '2024-01-15 11:15',
-            pages: 12,
-          },
-          {
-            id: 'JOB-2024-003',
-            fileName: '图表分析.xlsx',
-            user: '王五',
-            printer: 'Epson EcoTank L3150',
-            status: 'pending',
-            createdAt: '2024-01-15 11:45',
-            pages: 3,
-          },
-          {
-            id: 'JOB-2024-004',
-            fileName: '项目计划.pptx',
-            user: '赵六',
-            printer: 'Brother HL-L2350DW',
-            status: 'failed',
-            createdAt: '2024-01-15 12:00',
-            pages: 20,
-          },
-        ],
-        total: 4,
+        jobs: [],
+        total: 0
       };
     }
   }
 
-  // 获取边缘节点列表
-  async getEdgeNodes(): Promise<EdgeNode[]> {
+  // 获取边缘节点列表  
+  async getEdgeNodes(): Promise<EdgeNodeStatus[]> {
     try {
-      const response = await apiService.get<EdgeNode[]>('/admin/edge-nodes');
+      const response = await apiService.get<EdgeNodeStatus[]>('/admin/edge-nodes');
       return response.data.map(node => ({
         ...node,
         key: node.id, // 为 Ant Design Table 添加 key
       }));
     } catch (error) {
       console.error('获取边缘节点列表失败:', error);
-      // 返回模拟数据作为fallback
-      return [
-        {
-          id: '1',
-          name: 'EdgeNode-Office-A',
-          location: '办公楼A',
-          status: 'online',
-          lastSeen: '2024-01-15 12:00',
-          version: 'v1.2.3',
-          printerCount: 3,
-        },
-        {
-          id: '2',
-          name: 'EdgeNode-Office-B',
-          location: '办公楼B',
-          status: 'online',
-          lastSeen: '2024-01-15 11:58',
-          version: 'v1.2.3',
-          printerCount: 2,
-        },
-      ];
+      return [];
     }
   }
 
@@ -220,11 +124,10 @@ class DashboardService {
       return response.data;
     } catch (error) {
       console.error('获取打印任务趋势失败:', error);
-      // 返回模拟数据作为fallback
       return {
-        dates: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
-        completed: [12, 18, 15, 22, 28, 16, 20],
-        failed: [2, 1, 3, 2, 1, 4, 2],
+        dates: [],
+        completed: [],
+        failed: []
       };
     }
   }

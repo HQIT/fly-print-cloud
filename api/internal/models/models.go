@@ -84,7 +84,7 @@ type PrinterCapabilities struct {
 type PrintJob struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
-	Status       string    `json:"status"`        // pending/downloading/printing/completed/failed/cancelled
+	Status       string    `json:"status"`        // pending/dispatched/downloading/printing/completed/failed/cancelled
 	
 	// 关联信息
 	PrinterID    string    `json:"printer_id"`

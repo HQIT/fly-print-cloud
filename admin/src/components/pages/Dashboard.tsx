@@ -84,7 +84,7 @@ class DashboardService {
       
       const printers = printersResult?.data?.items || [];
       const edgeNodes = edgeNodesResult?.data?.items || [];
-      const printJobs = printJobsResult?.data?.items || [];
+      const printJobs = printJobsResult?.jobs || [];
       
       // 计算统计数据
       const onlinePrinters = printers.filter((p: any) => p.status === 'ready' || p.status === 'printing').length;
@@ -140,8 +140,8 @@ class DashboardService {
       if (response.ok) {
         const result = await response.json();
         return {
-          jobs: result?.data?.items || [],
-          total: result?.data?.total || 0
+          jobs: result?.jobs || [],
+          total: result?.pagination?.total || result?.jobs?.length || 0
         };
       }
     } catch (error) {

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -11,15 +12,20 @@ import (
 	"github.com/gin-gonic/gin"
 	"fly-print-cloud/api/internal/database"
 	"fly-print-cloud/api/internal/models"
+	"fly-print-cloud/api/internal/websocket"
 )
 
 type PrintJobHandler struct {
 	printJobRepo *database.PrintJobRepository
+	printerRepo  *database.PrinterRepository
+	wsManager    *websocket.ConnectionManager
 }
 
-func NewPrintJobHandler(printJobRepo *database.PrintJobRepository) *PrintJobHandler {
+func NewPrintJobHandler(printJobRepo *database.PrintJobRepository, printerRepo *database.PrinterRepository, wsManager *websocket.ConnectionManager) *PrintJobHandler {
 	return &PrintJobHandler{
 		printJobRepo: printJobRepo,
+		printerRepo:  printerRepo,
+		wsManager:    wsManager,
 	}
 }
 
@@ -131,6 +137,34 @@ func (h *PrintJobHandler) CreatePrintJob(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建打印任务失败"})
 		return
+	}
+
+	// 获取打印机信息以确定Edge Node
+	printer, err := h.printerRepo.GetPrinterByID(job.PrinterID)
+	if err != nil {
+		log.Printf("Failed to get printer %s: %v", job.PrinterID, err)
+		c.JSON(http.StatusCreated, job) // 任务已创建，但分发失败
+		return
+	}
+
+	if printer == nil {
+		log.Printf("Printer %s not found", job.PrinterID)
+		c.JSON(http.StatusCreated, job) // 任务已创建，但分发失败
+		return
+	}
+
+	// 分发任务到Edge Node
+	err = h.wsManager.DispatchPrintJob(printer.EdgeNodeID, job)
+	if err != nil {
+		log.Printf("Failed to dispatch print job %s to node %s: %v", job.ID, printer.EdgeNodeID, err)
+		// 任务已创建，但分发失败，保持pending状态
+	} else {
+		log.Printf("Print job %s dispatched to node %s", job.ID, printer.EdgeNodeID)
+		// 更新任务状态为已分发
+		job.Status = "dispatched"
+		if updateErr := h.printJobRepo.UpdatePrintJob(job); updateErr != nil {
+			log.Printf("Failed to update job status to dispatched: %v", updateErr)
+		}
 	}
 
 	c.JSON(http.StatusCreated, job)

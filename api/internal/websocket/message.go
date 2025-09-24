@@ -73,3 +73,19 @@ type JobUpdateData struct {
 	Progress     int     `json:"progress"`
 	ErrorMessage *string `json:"error_message"`
 }
+
+// 打印任务分发数据
+type PrintJobData struct {
+	JobID       string `json:"job_id"`
+	Name        string `json:"name"`
+	PrinterID   string `json:"printer_id"`
+	FilePath    string `json:"file_path,omitempty"`
+	FileURL     string `json:"file_url,omitempty"`
+	FileSize    int64  `json:"file_size"`
+	PageCount   int    `json:"page_count"`
+	Copies      int    `json:"copies"`
+	PaperSize   string `json:"paper_size"`
+	ColorMode   string `json:"color_mode"`
+	DuplexMode  string `json:"duplex_mode"`
+	MaxRetries  int    `json:"max_retries"`
+}

@@ -1,8 +1,12 @@
 package websocket
 
 import (
+	"encoding/json"
 	"log"
 	"sync"
+	"time"
+
+	"fly-print-cloud/api/internal/models"
 )
 
 // ConnectionManager 管理所有 WebSocket 连接
@@ -134,4 +138,42 @@ func (m *ConnectionManager) GetConnectionCount() int {
 	defer m.mutex.RUnlock()
 
 	return len(m.connections)
+}
+
+
+// DispatchPrintJob 分发打印任务到指定Edge Node
+func (m *ConnectionManager) DispatchPrintJob(nodeID string, job *models.PrintJob) error {
+	// 构造打印任务数据
+	printJobData := PrintJobData{
+		JobID:       job.ID,
+		Name:        job.Name,
+		PrinterID:   job.PrinterID,
+		FilePath:    job.FilePath,
+		FileURL:     job.FileURL,
+		FileSize:    job.FileSize,
+		PageCount:   job.PageCount,
+		Copies:      job.Copies,
+		PaperSize:   job.PaperSize,
+		ColorMode:   job.ColorMode,
+		DuplexMode:  job.DuplexMode,
+		MaxRetries:  job.MaxRetries,
+	}
+
+	// 构造指令消息
+	command := Command{
+		Type:      CmdTypePrintJob,
+		CommandID: job.ID, // 使用job ID作为command ID
+		Timestamp: time.Now(),
+		Target:    nodeID,
+		Data:      printJobData,
+	}
+
+	// 序列化消息
+	message, err := json.Marshal(command)
+	if err != nil {
+		return err
+	}
+
+	// 发送到指定节点
+	return m.SendToNode(nodeID, message)
 }
