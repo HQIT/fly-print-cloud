@@ -7,8 +7,9 @@ import (
 // EdgeNode Edge节点
 type EdgeNode struct {
 	ID              string     `json:"id"`
-	Name            string     `json:"name"`
+	Name            string     `json:"name"`            // 用户友好的显示名称（可修改）
 	Status          string     `json:"status"` // online/offline
+	Enabled         bool       `json:"enabled"`         // 云端启用/禁用状态
 	Version         string     `json:"version"`
 	LastHeartbeat   time.Time  `json:"last_heartbeat"`
 	DeletedAt       *time.Time `json:"deleted_at,omitempty"` // 软删除时间
@@ -40,10 +41,12 @@ type EdgeNode struct {
 // Printer 打印机
 type Printer struct {
 	ID           string   `json:"id"`
-	Name         string   `json:"name"`
+	Name         string   `json:"name"`          // CUPS printer-name (技术名称，Edge node范围内唯一)
+	DisplayName  string   `json:"display_name"`  // 用户友好的显示名称
 	Model        string   `json:"model"`
 	SerialNumber string   `json:"serial_number"`    // 序列号
 	Status       string   `json:"status"`           // ready/printing/error/offline
+	Enabled      bool     `json:"enabled"`          // 云端启用/禁用状态
 	
 	// 硬件信息
 	FirmwareVersion string `json:"firmware_version"` // 固件版本

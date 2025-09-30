@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Tag, Space, Button, Select, Input, message, Popconfirm } from 'antd';
+import { Card, Table, Tag, Space, Button, Select, Input, message, Popconfirm, Modal, Form, InputNumber, Radio } from 'antd';
 import { 
   ReloadOutlined,
   SearchOutlined,
@@ -32,6 +32,41 @@ interface PrintJob {
   retry_count: number;
   max_retries: number;
   key?: string;
+}
+
+// Edge Node 接口
+interface EdgeNode {
+  id: string;
+  name: string;
+  display_name: string;
+  status: string;
+}
+
+// Printer 接口
+interface Printer {
+  id: string;
+  name: string;
+  display_name: string;
+  status: string;
+  edge_node_id: string;
+  capabilities: {
+    paper_sizes: string[];
+    color_support: boolean;
+    duplex_support: boolean;
+    resolution: string;
+    print_speed: string;
+    media_types: string[];
+  };
+}
+
+// 重新打印表单数据
+interface ReprintFormData {
+  edge_node_id: string;
+  printer_id: string;
+  copies: number;
+  color_mode: 'color' | 'grayscale';
+  duplex_mode: 'single' | 'duplex';
+  paper_size: string;
 }
 
 // Print Jobs 服务类
@@ -98,6 +133,15 @@ const PrintJobs: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
+  
+  // 重新打印Modal相关状态
+  const [reprintModalVisible, setReprintModalVisible] = useState(false);
+  const [reprintJob, setReprintJob] = useState<PrintJob | null>(null);
+  const [edgeNodes, setEdgeNodes] = useState<EdgeNode[]>([]);
+  const [printers, setPrinters] = useState<Printer[]>([]);
+  const [selectedEdgeNodeId, setSelectedEdgeNodeId] = useState<string>('');
+  const [selectedPrinter, setSelectedPrinter] = useState<Printer | null>(null);
+  const [form] = Form.useForm();
 
   // 加载打印任务数据
   const loadPrintJobs = async (page = 1, size = 10, status = '') => {
@@ -210,6 +254,145 @@ const PrintJobs: React.FC = () => {
     }
   };
 
+  // 打开重新打印Modal
+  const handleReprintJob = async (job: PrintJob) => {
+    setReprintJob(job);
+    setReprintModalVisible(true);
+    
+    // 加载Edge Nodes
+    await loadEdgeNodes();
+    
+    // 预设表单默认值
+    form.setFieldsValue({
+      edge_node_id: '', // 需要用户选择
+      printer_id: job.printer_id,
+      copies: job.copies || 1,
+      color_mode: job.color_mode || 'grayscale',
+      duplex_mode: job.duplex_mode || 'single',
+      paper_size: job.paper_size || 'A4',
+    });
+  };
+
+  // 加载Edge Nodes
+  const loadEdgeNodes = async () => {
+    try {
+      const token = await printJobsService.getToken();
+      const response = await fetch('/api/v1/admin/edge-nodes', {
+        headers: {
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        setEdgeNodes(result.data?.items || []);
+      }
+    } catch (error) {
+      console.error('加载Edge Nodes失败:', error);
+    }
+  };
+
+  // 加载指定Edge Node的打印机
+  const loadPrinters = async (edgeNodeId: string) => {
+    try {
+      const token = await printJobsService.getToken();
+      const response = await fetch(`/api/v1/admin/printers?edge_node_id=${edgeNodeId}`, {
+        headers: {
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        setPrinters(result.data?.items || []);
+      }
+    } catch (error) {
+      console.error('加载打印机失败:', error);
+    }
+  };
+
+  // Edge Node选择变化
+  const handleEdgeNodeChange = (edgeNodeId: string) => {
+    setSelectedEdgeNodeId(edgeNodeId);
+    setSelectedPrinter(null); // 清空选中的打印机
+    form.setFieldsValue({ printer_id: '' }); // 清空打印机选择
+    loadPrinters(edgeNodeId);
+  };
+
+  // 打印机选择变化
+  const handlePrinterChange = (printerId: string) => {
+    const printer = printers.find(p => p.id === printerId);
+    setSelectedPrinter(printer || null);
+    
+    // 确保表单中的printer_id正确设置
+    form.setFieldsValue({ printer_id: printerId });
+    
+    // 根据打印机能力调整表单值
+    if (printer) {
+      const formValues = form.getFieldsValue();
+      const updates: any = {};
+      
+      // 如果打印机不支持彩色，强制设为黑白
+      if (!printer.capabilities.color_support && formValues.color_mode === 'color') {
+        updates.color_mode = 'grayscale';
+      }
+      
+      // 如果打印机不支持双面，强制设为单面
+      if (!printer.capabilities.duplex_support && formValues.duplex_mode === 'duplex') {
+        updates.duplex_mode = 'single';
+      }
+      
+      // 如果当前纸张大小不支持，设为第一个支持的纸张大小
+      if (printer.capabilities.paper_sizes.length > 0 && 
+          !printer.capabilities.paper_sizes.includes(formValues.paper_size)) {
+        updates.paper_size = printer.capabilities.paper_sizes[0];
+      }
+      
+      // 批量更新表单值
+      if (Object.keys(updates).length > 0) {
+        form.setFieldsValue(updates);
+      }
+    }
+  };
+
+  // 提交重新打印
+  const handleReprintSubmit = async (values: ReprintFormData) => {
+    if (!reprintJob) return;
+
+    try {
+      const token = await printJobsService.getToken();
+      const response = await fetch(`/api/v1/admin/print-jobs/${reprintJob.id}/reprint`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+        body: JSON.stringify({
+          printer_id: values.printer_id,
+          copies: values.copies,
+          paper_size: values.paper_size,
+          color_mode: values.color_mode,
+          duplex_mode: values.duplex_mode,
+        }),
+      });
+      
+      if (response.ok) {
+        message.success('重新打印任务创建成功');
+        setReprintModalVisible(false);
+        setSelectedPrinter(null);
+        setSelectedEdgeNodeId('');
+        form.resetFields();
+        loadPrintJobs(currentPage, pageSize, statusFilter);
+      } else {
+        const result = await response.json();
+        message.error(result.error || '重新打印任务创建失败');
+      }
+    } catch (error) {
+      console.error('重新打印任务失败:', error);
+      message.error('重新打印任务失败');
+    }
+  };
+
   // 表格列定义
   const columns = [
     {
@@ -307,6 +490,13 @@ const PrintJobs: React.FC = () => {
             </Popconfirm>
           )}
           
+          {/* 重新打印 - 已完成、失败、取消的任务都可以重新打印 */}
+          {(record.status === 'completed' || record.status === 'failed' || record.status === 'cancelled') && (
+            <Button size="small" type="link" onClick={() => handleReprintJob(record)}>
+              重新打印
+            </Button>
+          )}
+
           {/* 删除任务 - 只有completed、failed、cancelled状态可以删除 */}
           {(record.status === 'completed' || record.status === 'failed' || record.status === 'cancelled') && (
             <Popconfirm
@@ -382,6 +572,153 @@ const PrintJobs: React.FC = () => {
           scroll={{ x: 1200 }}
         />
       </Card>
+
+      {/* 重新打印Modal */}
+      <Modal
+        title={`重新打印 - ${reprintJob?.name}`}
+        open={reprintModalVisible}
+        onCancel={() => {
+          setReprintModalVisible(false);
+          setSelectedPrinter(null);
+          setSelectedEdgeNodeId('');
+          form.resetFields();
+        }}
+        footer={null}
+        width={600}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleReprintSubmit}
+        >
+          <Form.Item
+            name="edge_node_id"
+            label="选择Edge Node"
+            rules={[{ required: true, message: '请选择Edge Node' }]}
+          >
+            <Select
+              placeholder="请选择Edge Node"
+              onChange={handleEdgeNodeChange}
+              showSearch
+              optionFilterProp="children"
+            >
+              {edgeNodes.map(node => (
+                <Select.Option key={node.id} value={node.id}>
+                  {node.display_name || node.name} ({node.status})
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="printer_id"
+            label="选择打印机"
+            rules={[{ required: true, message: '请选择打印机' }]}
+          >
+            <Select
+              placeholder="请先选择Edge Node"
+              disabled={!selectedEdgeNodeId}
+              showSearch
+              optionFilterProp="children"
+              onChange={handlePrinterChange}
+            >
+              {printers.map(printer => (
+                <Select.Option key={printer.id} value={printer.id}>
+                  {printer.display_name || printer.name} ({printer.status})
+                </Select.Option>
+              ))}
+            </Select>
+            {selectedPrinter && (
+              <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                <strong>打印机能力：</strong>
+                {selectedPrinter.capabilities.color_support ? '支持彩色' : '仅黑白'}
+                {', '}
+                {selectedPrinter.capabilities.duplex_support ? '支持双面' : '仅单面'}
+                {selectedPrinter.capabilities.paper_sizes.length > 0 && (
+                  <>，支持纸张：{selectedPrinter.capabilities.paper_sizes.join(', ')}</>
+                )}
+              </div>
+            )}
+          </Form.Item>
+
+          <Form.Item
+            name="copies"
+            label="打印份数"
+            rules={[{ required: true, message: '请输入打印份数' }]}
+          >
+            <InputNumber min={1} max={99} />
+          </Form.Item>
+
+          <Form.Item
+            name="paper_size"
+            label="纸张大小"
+            rules={[{ required: true, message: '请选择纸张大小' }]}
+          >
+            <Select disabled={!selectedPrinter}>
+              {selectedPrinter?.capabilities.paper_sizes.length > 0 ? (
+                selectedPrinter.capabilities.paper_sizes.map(size => (
+                  <Select.Option key={size} value={size}>{size}</Select.Option>
+                ))
+              ) : (
+                // 默认选项（如果打印机没有指定支持的纸张大小）
+                <>
+                  <Select.Option value="A4">A4</Select.Option>
+                  <Select.Option value="A3">A3</Select.Option>
+                  <Select.Option value="Letter">Letter</Select.Option>
+                  <Select.Option value="Legal">Legal</Select.Option>
+                </>
+              )}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="color_mode"
+            label="颜色模式"
+            rules={[{ required: true, message: '请选择颜色模式' }]}
+          >
+            <Radio.Group disabled={!selectedPrinter}>
+              <Radio value="grayscale">黑白</Radio>
+              {selectedPrinter?.capabilities.color_support && (
+                <Radio value="color">彩色</Radio>
+              )}
+            </Radio.Group>
+            {selectedPrinter && !selectedPrinter.capabilities.color_support && (
+              <div style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>
+                该打印机不支持彩色打印
+              </div>
+            )}
+          </Form.Item>
+
+          <Form.Item
+            name="duplex_mode"
+            label="双面模式"
+            rules={[{ required: true, message: '请选择双面模式' }]}
+          >
+            <Radio.Group disabled={!selectedPrinter}>
+              <Radio value="single">单面</Radio>
+              {selectedPrinter?.capabilities.duplex_support && (
+                <Radio value="duplex">双面</Radio>
+              )}
+            </Radio.Group>
+            {selectedPrinter && !selectedPrinter.capabilities.duplex_support && (
+              <div style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>
+                该打印机不支持双面打印
+              </div>
+            )}
+          </Form.Item>
+
+          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+            <Space>
+              <Button onClick={() => setReprintModalVisible(false)}>
+                取消
+              </Button>
+              <Button type="primary" htmlType="submit">
+                确认打印
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

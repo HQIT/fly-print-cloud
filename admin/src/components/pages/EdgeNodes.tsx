@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Tag, Space, Row, Col, Statistic, message } from 'antd';
+import { Card, Table, Tag, Space, Row, Col, Statistic, message, Modal, Form, Input, Button } from 'antd';
 import { 
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   StopOutlined,
   PrinterOutlined,
-  CloudServerOutlined
+  CloudServerOutlined,
+  EditOutlined
 } from '@ant-design/icons';
 
 // 边缘节点接口（适配后端数据模型）
@@ -14,6 +15,7 @@ interface EdgeNode {
   name: string;
   location: string;
   status: 'online' | 'offline' | 'error';
+  enabled: boolean;
   last_heartbeat: string;
   version: string;
   printer_count: number;  // 后端返回的打印机数量字段
@@ -62,6 +64,52 @@ class EdgeNodesService {
     console.log('🔄 [DEBUG] API调用失败，返回空数据');
     return [];
   }
+
+  async updateEdgeNode(id: string, name: string): Promise<boolean> {
+    try {
+      const token = await this.getToken();
+      const response = await fetch(`/api/v1/admin/edge-nodes/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      
+      return response.ok;
+    } catch (error) {
+      console.error('更新Edge Node失败:', error);
+      return false;
+    }
+  }
+
+  async updateEdgeNodeEnabled(id: string, enabled: boolean): Promise<boolean> {
+    try {
+      const token = await this.getToken();
+      // 先获取当前的Edge Node信息
+      const nodes = await this.getEdgeNodes();
+      const currentNode = nodes.find(node => node.id === id);
+      if (!currentNode) {
+        console.error('Edge Node not found:', id);
+        return false;
+      }
+
+      const response = await fetch(`/api/v1/admin/edge-nodes/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+        },
+        body: JSON.stringify({ name: currentNode.name, enabled }),
+      });
+      
+      return response.ok;
+    } catch (error) {
+      console.error('更新Edge Node启用状态失败:', error);
+      return false;
+    }
+  }
 }
 
 const edgeNodesService = new EdgeNodesService();
@@ -70,6 +118,11 @@ const edgeNodesService = new EdgeNodesService();
 const EdgeNodes: React.FC = () => {
   const [edgeNodes, setEdgeNodes] = useState<EdgeNode[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // 编辑相关状态
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingNode, setEditingNode] = useState<EdgeNode | null>(null);
+  const [form] = Form.useForm();
 
   // 加载边缘节点数据
   const loadEdgeNodes = async () => {
@@ -88,6 +141,51 @@ const EdgeNodes: React.FC = () => {
   useEffect(() => {
     loadEdgeNodes();
   }, []);
+
+  // 编辑Edge Node名称
+  const handleEditNode = (node: EdgeNode) => {
+    setEditingNode(node);
+    form.setFieldsValue({ name: node.name });
+    setEditModalVisible(true);
+  };
+
+  // 提交名称修改
+  const handleEditSubmit = async (values: { name: string }) => {
+    if (!editingNode) return;
+
+    try {
+      const success = await edgeNodesService.updateEdgeNode(editingNode.id, values.name);
+      if (success) {
+        message.success('Edge Node名称修改成功');
+        setEditModalVisible(false);
+        setEditingNode(null);
+        form.resetFields();
+        loadEdgeNodes(); // 重新加载数据
+      } else {
+        message.error('修改失败，请稍后重试');
+      }
+    } catch (error) {
+      console.error('修改Edge Node名称失败:', error);
+      message.error('修改失败，请稍后重试');
+    }
+  };
+
+  // 切换启用/禁用状态
+  const handleToggleEnabled = async (node: EdgeNode) => {
+    try {
+      const newEnabled = !node.enabled;
+      const success = await edgeNodesService.updateEdgeNodeEnabled(node.id, newEnabled);
+      if (success) {
+        message.success(`Edge Node已${newEnabled ? '启用' : '禁用'}`);
+        loadEdgeNodes(); // 重新加载数据
+      } else {
+        message.error('操作失败，请稍后重试');
+      }
+    } catch (error) {
+      console.error('切换Edge Node状态失败:', error);
+      message.error('操作失败，请稍后重试');
+    }
+  };
 
   // 状态图标映射
   const getStatusIcon = (status: string) => {
@@ -174,6 +272,33 @@ const EdgeNodes: React.FC = () => {
         </Space>
       ),
     },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (_, record: EdgeNode) => (
+        <Space size="small">
+          <Button 
+            type="text" 
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => handleEditNode(record)}
+          >
+            编辑名称
+          </Button>
+          <Button 
+            type="text" 
+            size="small"
+            onClick={() => handleToggleEnabled(record)}
+            style={{ 
+              color: record.enabled ? '#ff4d4f' : '#52c41a' 
+            }}
+          >
+            {record.enabled ? '禁用' : '启用'}
+          </Button>
+        </Space>
+      ),
+    },
   ];
 
   // 计算统计数据
@@ -247,6 +372,58 @@ const EdgeNodes: React.FC = () => {
           size="middle"
         />
       </Card>
+
+      {/* 编辑Edge Node名称模态框 */}
+      <Modal
+        title="编辑Edge Node名称"
+        open={editModalVisible}
+        onCancel={() => {
+          setEditModalVisible(false);
+          setEditingNode(null);
+          form.resetFields();
+        }}
+        footer={null}
+        width={500}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleEditSubmit}
+        >
+          <Form.Item
+            name="name"
+            label="节点名称"
+            rules={[
+              { required: true, message: '请输入节点名称' },
+              { max: 100, message: '名称不能超过100个字符' }
+            ]}
+          >
+            <Input placeholder="输入节点名称" />
+          </Form.Item>
+          
+          {editingNode && (
+            <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
+              <div><strong>节点ID：</strong>{editingNode.id}</div>
+              <div><strong>当前状态：</strong>{editingNode.status}</div>
+            </div>
+          )}
+
+          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+            <Space>
+              <Button onClick={() => {
+                setEditModalVisible(false);
+                setEditingNode(null);
+                form.resetFields();
+              }}>
+                取消
+              </Button>
+              <Button type="primary" htmlType="submit">
+                保存
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

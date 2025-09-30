@@ -129,7 +129,7 @@ func (h *PrintJobHandler) CreatePrintJob(c *gin.Context) {
 		PaperSize:    req.PaperSize,
 		ColorMode:    req.ColorMode,
 		DuplexMode:   req.DuplexMode,
-		RetryCount:   0,
+		RetryCount:   0,  // 保留字段但不使用
 		MaxRetries:   req.MaxRetries,
 	}
 
@@ -141,25 +141,31 @@ func (h *PrintJobHandler) CreatePrintJob(c *gin.Context) {
 		job.MaxRetries = 3
 	}
 
-	err := h.printJobRepo.CreatePrintJob(job)
+	// 获取打印机信息进行能力校验
+	printer, err := h.printerRepo.GetPrinterByID(job.PrinterID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取打印机信息失败"})
+		return
+	}
+
+	if printer == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "打印机不存在"})
+		return
+	}
+
+	// 校验打印机能力
+	if err := h.validatePrintJobCapabilities(job, printer); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = h.printJobRepo.CreatePrintJob(job)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建打印任务失败"})
 		return
 	}
 
-	// 获取打印机信息以确定Edge Node
-	printer, err := h.printerRepo.GetPrinterByID(job.PrinterID)
-	if err != nil {
-		log.Printf("Failed to get printer %s: %v", job.PrinterID, err)
-		c.JSON(http.StatusCreated, job) // 任务已创建，但分发失败
-		return
-	}
-
-	if printer == nil {
-		log.Printf("Printer %s not found", job.PrinterID)
-		c.JSON(http.StatusCreated, job) // 任务已创建，但分发失败
-		return
-	}
+	// 打印机信息已在上面获取并校验过
 
 	// 分发任务到Edge Node
 	err = h.wsManager.DispatchPrintJob(printer.EdgeNodeID, job, printer.Name)
@@ -198,29 +204,70 @@ func (h *PrintJobHandler) GetPrintJob(c *gin.Context) {
 
 // ListPrintJobs 获取打印任务列表
 func (h *PrintJobHandler) ListPrintJobs(c *gin.Context) {
-	// 分页参数
-	limitStr := c.DefaultQuery("limit", "20")
-	offsetStr := c.DefaultQuery("offset", "0")
+	// 支持两种分页参数格式
+	var limit, offset int
 	
-	limit, _ := strconv.Atoi(limitStr)
-	offset, _ := strconv.Atoi(offsetStr)
+	// 优先使用 page/pageSize 参数（前端使用）
+	pageStr := c.Query("page")
+	pageSizeStr := c.Query("pageSize")
+	page_sizeStr := c.Query("page_size") // 兼容下划线格式
+	
+	if pageStr != "" && (pageSizeStr != "" || page_sizeStr != "") {
+		page, _ := strconv.Atoi(pageStr)
+		if page < 1 {
+			page = 1
+		}
+		
+		pageSize := 20 // 默认值
+		if pageSizeStr != "" {
+			pageSize, _ = strconv.Atoi(pageSizeStr)
+		} else if page_sizeStr != "" {
+			pageSize, _ = strconv.Atoi(page_sizeStr)
+		}
+		
+		if pageSize < 1 {
+			pageSize = 20
+		}
+		if pageSize > 100 {
+			pageSize = 100 // 限制最大页面大小
+		}
+		
+		limit = pageSize
+		offset = (page - 1) * pageSize
+	} else {
+		// fallback 到 limit/offset 参数
+		limitStr := c.DefaultQuery("limit", "20")
+		offsetStr := c.DefaultQuery("offset", "0")
+		
+		limit, _ = strconv.Atoi(limitStr)
+		offset, _ = strconv.Atoi(offsetStr)
+	}
 
 	// 过滤参数
 	status := c.Query("status")
 	printerID := c.Query("printer_id")
 	userID := c.Query("user_id")
 
-	jobs, err := h.printJobRepo.ListPrintJobs(limit, offset, status, printerID, userID)
+	jobs, total, err := h.printJobRepo.ListPrintJobsWithTotal(limit, offset, status, printerID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取打印任务列表失败"})
 		return
 	}
 
+	// 计算当前页码
+	currentPage := (offset / limit) + 1
+	if limit == 0 {
+		currentPage = 1
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"jobs": jobs,
 		"pagination": gin.H{
-			"limit":  limit,
-			"offset": offset,
+			"page":      currentPage,
+			"pageSize":  limit,
+			"total":     total,
+			"limit":     limit,
+			"offset":    offset,
 		},
 	})
 }
@@ -361,44 +408,158 @@ func (h *PrintJobHandler) CancelPrintJob(c *gin.Context) {
 	c.JSON(http.StatusOK, job)
 }
 
-// RetryPrintJob 重试打印任务
-func (h *PrintJobHandler) RetryPrintJob(c *gin.Context) {
+// ReprintRequest 重新打印请求
+type ReprintRequest struct {
+	PrinterID  string `json:"printer_id" binding:"required"`
+	Copies     int    `json:"copies" binding:"omitempty,min=1,max=99"`
+	PaperSize  string `json:"paper_size"`
+	ColorMode  string `json:"color_mode"`
+	DuplexMode string `json:"duplex_mode"`
+}
+
+// ReprintJob 重新打印任务（基于原任务创建新任务）
+func (h *PrintJobHandler) ReprintJob(c *gin.Context) {
 	id := c.Param("id")
 
-	job, err := h.printJobRepo.GetPrintJobByID(id)
+	// 获取原任务
+	originalJob, err := h.printJobRepo.GetPrintJobByID(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取打印任务失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取原任务失败"})
 		return
 	}
 
-	if job == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "打印任务不存在"})
+	if originalJob == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "原任务不存在"})
 		return
 	}
 
-	// 只有failed状态的任务可以重试
-	if job.Status != "failed" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "任务状态不允许重试"})
+	// 只有已完成、失败、取消的任务可以重新打印
+	if originalJob.Status != "completed" && originalJob.Status != "failed" && originalJob.Status != "cancelled" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "任务状态不允许重新打印"})
 		return
 	}
 
-	// 检查重试次数
-	if job.RetryCount >= job.MaxRetries {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "已达到最大重试次数"})
+	// 解析重新打印参数
+	var req ReprintRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
 		return
 	}
 
-	job.Status = "pending"
-	job.RetryCount++
-	job.ErrorMessage = ""
-	job.StartTime = time.Time{}
-	job.EndTime = time.Time{}
+	// 从OAuth2认证中获取用户信息
+	userID, exists := c.Get("external_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
 
-	err = h.printJobRepo.UpdatePrintJob(job)
+	userName, exists := c.Get("username")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	// 创建新任务（基于原任务和新参数）
+	newJob := &models.PrintJob{
+		Name:         fmt.Sprintf("重打-%s", originalJob.Name),
+		Status:       "pending",
+		PrinterID:    req.PrinterID,  // 使用请求中的打印机ID
+		UserID:       userID.(string),
+		UserName:     userName.(string),
+		FilePath:     originalJob.FilePath,  // 文件信息保持不变
+		FileURL:      originalJob.FileURL,
+		FileSize:     originalJob.FileSize,
+		PageCount:    originalJob.PageCount,
+		Copies:       req.Copies,     // 使用请求中的份数
+		PaperSize:    req.PaperSize,  // 使用请求中的纸张大小
+		ColorMode:    req.ColorMode,  // 使用请求中的颜色模式
+		DuplexMode:   req.DuplexMode, // 使用请求中的双面模式
+		RetryCount:   0,  // 新任务重置为0
+		MaxRetries:   3,  // 新任务使用默认值
+	}
+
+	// 设置默认值
+	if newJob.Copies == 0 {
+		newJob.Copies = 1
+	}
+
+	// 获取打印机信息进行能力校验
+	printer, err := h.printerRepo.GetPrinterByID(newJob.PrinterID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "重试打印任务失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取打印机信息失败"})
 		return
 	}
 
-	c.JSON(http.StatusOK, job)
+	if printer == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "打印机不存在"})
+		return
+	}
+
+	// 校验打印机能力
+	if err := h.validatePrintJobCapabilities(newJob, printer); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = h.printJobRepo.CreatePrintJob(newJob)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建重新打印任务失败"})
+		return
+	}
+
+	// 打印机信息已在上面获取并校验过
+
+	// 分发任务到Edge Node
+	err = h.wsManager.DispatchPrintJob(printer.EdgeNodeID, newJob, printer.Name)
+	if err != nil {
+		log.Printf("Failed to dispatch print job %s to node %s: %v", newJob.ID, printer.EdgeNodeID, err)
+		// 任务已创建，但分发失败，保持pending状态
+	} else {
+		log.Printf("Print job %s dispatched to node %s", newJob.ID, printer.EdgeNodeID)
+		// 更新任务状态为已分发
+		newJob.Status = "dispatched"
+		if updateErr := h.printJobRepo.UpdatePrintJob(newJob); updateErr != nil {
+			log.Printf("Failed to update job status to dispatched: %v", updateErr)
+		}
+	}
+
+	c.JSON(http.StatusCreated, newJob)
+}
+
+// validatePrintJobCapabilities 校验打印任务参数是否符合打印机能力
+func (h *PrintJobHandler) validatePrintJobCapabilities(job *models.PrintJob, printer *models.Printer) error {
+	// 校验颜色模式
+	if job.ColorMode == "color" && !printer.Capabilities.ColorSupport {
+		return fmt.Errorf("打印机 %s 不支持彩色打印", printer.Name)
+	}
+
+	// 校验双面模式
+	if job.DuplexMode == "duplex" && !printer.Capabilities.DuplexSupport {
+		return fmt.Errorf("打印机 %s 不支持双面打印", printer.Name)
+	}
+
+	// 校验纸张大小
+	if job.PaperSize != "" && len(printer.Capabilities.PaperSizes) > 0 {
+		supportedSize := false
+		for _, size := range printer.Capabilities.PaperSizes {
+			if size == job.PaperSize {
+				supportedSize = true
+				break
+			}
+		}
+		if !supportedSize {
+			return fmt.Errorf("打印机 %s 不支持纸张大小 %s，支持的大小：%v", 
+				printer.Name, job.PaperSize, printer.Capabilities.PaperSizes)
+		}
+	}
+
+	// 校验份数（一般限制）
+	if job.Copies <= 0 {
+		return fmt.Errorf("打印份数必须大于0")
+	}
+	if job.Copies > 99 {
+		return fmt.Errorf("打印份数不能超过99份")
+	}
+
+	return nil
 }

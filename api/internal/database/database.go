@@ -86,8 +86,9 @@ func (db *DB) InitTables() error {
 	edgeNodeTableSQL := `
 	CREATE TABLE IF NOT EXISTS edge_nodes (
 		id VARCHAR(100) PRIMARY KEY,
-		name VARCHAR(100) NOT NULL,
+		name VARCHAR(100) NOT NULL, -- User-friendly display name (can be modified)
 		status VARCHAR(20) NOT NULL DEFAULT 'offline',
+		enabled BOOLEAN NOT NULL DEFAULT true, -- 云端启用/禁用状态
 		version VARCHAR(50),
 		last_heartbeat TIMESTAMP,
 		deleted_at TIMESTAMP,
@@ -137,9 +138,11 @@ func (db *DB) InitTables() error {
 	CREATE TABLE IF NOT EXISTS printers (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		name VARCHAR(100) NOT NULL,
+		display_name VARCHAR(255),
 		model VARCHAR(100),
 		serial_number VARCHAR(100),
 		status VARCHAR(20) NOT NULL DEFAULT 'offline',
+		enabled BOOLEAN NOT NULL DEFAULT true, -- 云端启用/禁用状态
 		
 		-- 硬件信息
 		firmware_version VARCHAR(50),

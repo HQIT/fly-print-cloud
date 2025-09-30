@@ -22,21 +22,21 @@ func NewEdgeNodeRepository(db *DB) *EdgeNodeRepository {
 func (r *EdgeNodeRepository) CreateEdgeNode(node *models.EdgeNode) error {
 	query := `
 		INSERT INTO edge_nodes (
-			id, name, status, version, last_heartbeat,
+			id, name, status, enabled, version, last_heartbeat,
 			location, latitude, longitude,
 			ip_address, mac_address, network_interface,
 			os_version, cpu_info, memory_info, disk_info,
 			connection_quality, latency
 		) VALUES (
-			$1, $2, $3, $4, $5,
-			$6, $7, $8,
-			$9, $10, $11,
-			$12, $13, $14, $15,
-			$16, $17
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9,
+			$10, $11, $12,
+			$13, $14, $15, $16,
+			$17, $18
 		)`
 
 	_, err := r.db.Exec(query,
-		node.ID, node.Name, node.Status, node.Version, node.LastHeartbeat,
+		node.ID, node.Name, node.Status, node.Enabled, node.Version, node.LastHeartbeat,
 		node.Location, node.Latitude, node.Longitude,
 		node.IPAddress, node.MACAddress, node.NetworkInterface,
 		node.OSVersion, node.CPUInfo, node.MemoryInfo, node.DiskInfo,
@@ -104,7 +104,7 @@ func (r *EdgeNodeRepository) UpsertEdgeNode(node *models.EdgeNode) error {
 func (r *EdgeNodeRepository) GetEdgeNodeByID(id string) (*models.EdgeNode, error) {
 	node := &models.EdgeNode{}
 	query := `
-		SELECT id, name, status, version, last_heartbeat,
+		SELECT id, name, status, enabled, version, last_heartbeat,
 			   location, latitude, longitude,
 			   ip_address, mac_address, network_interface,
 			   os_version, cpu_info, memory_info, disk_info,
@@ -122,7 +122,7 @@ func (r *EdgeNodeRepository) GetEdgeNodeByID(id string) (*models.EdgeNode, error
 	var deletedAt sql.NullTime
 
 	err := r.db.QueryRow(query, id).Scan(
-		&node.ID, &node.Name, &node.Status, &version, &lastHeartbeat,
+		&node.ID, &node.Name, &node.Status, &node.Enabled, &version, &lastHeartbeat,
 		&location, &latitude, &longitude,
 		&ipAddress, &macAddress, &networkInterface,
 		&osVersion, &cpuInfo, &memoryInfo, &diskInfo,
@@ -194,15 +194,15 @@ func (r *EdgeNodeRepository) GetEdgeNodeByID(id string) (*models.EdgeNode, error
 func (r *EdgeNodeRepository) UpdateEdgeNode(node *models.EdgeNode) error {
 	query := `
 		UPDATE edge_nodes SET
-			name = $2, status = $3, version = $4, last_heartbeat = $5,
-			location = $6, latitude = $7, longitude = $8,
-			ip_address = $9, mac_address = $10, network_interface = $11,
-			os_version = $12, cpu_info = $13, memory_info = $14, disk_info = $15,
-			connection_quality = $16, latency = $17
+			name = $2, status = $3, enabled = $4, version = $5, last_heartbeat = $6,
+			location = $7, latitude = $8, longitude = $9,
+			ip_address = $10, mac_address = $11, network_interface = $12,
+			os_version = $13, cpu_info = $14, memory_info = $15, disk_info = $16,
+			connection_quality = $17, latency = $18
 		WHERE id = $1`
 
 	_, err := r.db.Exec(query,
-		node.ID, node.Name, node.Status, node.Version, node.LastHeartbeat,
+		node.ID, node.Name, node.Status, node.Enabled, node.Version, node.LastHeartbeat,
 		node.Location, node.Latitude, node.Longitude,
 		node.IPAddress, node.MACAddress, node.NetworkInterface,
 		node.OSVersion, node.CPUInfo, node.MemoryInfo, node.DiskInfo,
@@ -269,7 +269,7 @@ func (r *EdgeNodeRepository) ListEdgeNodes(offset, limit int, status string) ([]
 
 	// 查询数据
 	query := fmt.Sprintf(`
-		SELECT id, name, status, version, last_heartbeat,
+		SELECT id, name, status, enabled, version, last_heartbeat,
 			   location, latitude, longitude,
 			   ip_address, mac_address, network_interface,
 			   os_version, cpu_info, memory_info, disk_info,
@@ -302,7 +302,7 @@ func (r *EdgeNodeRepository) ListEdgeNodes(offset, limit int, status string) ([]
 
 		var deletedAt sql.NullTime
 		err := rows.Scan(
-			&node.ID, &node.Name, &node.Status, &version, &lastHeartbeat,
+			&node.ID, &node.Name, &node.Status, &node.Enabled, &version, &lastHeartbeat,
 			&location, &latitude, &longitude,
 			&ipAddress, &macAddress, &networkInterface,
 			&osVersion, &cpuInfo, &memoryInfo, &diskInfo,

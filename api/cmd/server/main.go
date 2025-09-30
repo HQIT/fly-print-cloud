@@ -67,7 +67,7 @@ func main() {
 	r.Use(middleware.CORSMiddleware())
 
 	// 设置路由
-	setupRoutes(r, userHandler, edgeNodeHandler, printerHandler, printJobHandler, wsHandler, oauth2Handler)
+	setupRoutes(r, userHandler, edgeNodeHandler, printerHandler, printJobHandler, wsHandler, oauth2Handler, printJobRepo)
 
 	// 启动服务器
 	serverAddr := cfg.Server.GetServerAddr()
@@ -79,7 +79,7 @@ func main() {
 	}
 }
 
-func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandler *handlers.EdgeNodeHandler, printerHandler *handlers.PrinterHandler, printJobHandler *handlers.PrintJobHandler, wsHandler *websocket.WebSocketHandler, oauth2Handler *handlers.OAuth2Handler) {
+func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandler *handlers.EdgeNodeHandler, printerHandler *handlers.PrinterHandler, printJobHandler *handlers.PrintJobHandler, wsHandler *websocket.WebSocketHandler, oauth2Handler *handlers.OAuth2Handler, printJobRepo *database.PrintJobRepository) {
 	// 公开路由
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -121,6 +121,13 @@ func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandl
 		// Admin Console API - 需要 admin:* scope
 		adminGroup := apiV1Group.Group("/admin")
 		{
+			// Dashboard 路由 - 需要 admin 或 operator 权限
+			dashboardGroup := adminGroup.Group("/dashboard", middleware.OAuth2ResourceServer("fly-print-admin", "fly-print-operator"))
+			{
+				dashboardHandler := handlers.NewDashboardHandler(printJobRepo)
+				dashboardGroup.GET("/trends", dashboardHandler.GetTrends)
+			}
+
 			// 用户管理路由 - 需要 admin 权限
 			userGroup := adminGroup.Group("/users", middleware.OAuth2ResourceServer("fly-print-admin"))
 			{
@@ -162,7 +169,7 @@ func setupRoutes(r *gin.Engine, userHandler *handlers.UserHandler, edgeNodeHandl
 				printJobGroup.PUT("/:id", printJobHandler.UpdatePrintJob)
 				printJobGroup.DELETE("/:id", printJobHandler.DeletePrintJob)
 				printJobGroup.POST("/:id/cancel", printJobHandler.CancelPrintJob)
-				printJobGroup.POST("/:id/retry", printJobHandler.RetryPrintJob)
+				printJobGroup.POST("/:id/reprint", printJobHandler.ReprintJob)
 			}
 		}
 

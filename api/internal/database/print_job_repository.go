@@ -228,3 +228,56 @@ func (r *PrintJobRepository) UpdateJobStatus(jobID, status string, progress int)
 	_, err := r.db.DB.Exec(query, jobID, status, now)
 	return err
 }
+
+// CountPrintJobs 统计打印任务总数
+func (r *PrintJobRepository) CountPrintJobs(status, printerID, userID string) (int, error) {
+	query := `SELECT COUNT(*) FROM print_jobs WHERE 1=1`
+	args := []interface{}{}
+	argIndex := 1
+
+	if status != "" {
+		query += fmt.Sprintf(" AND status = $%d", argIndex)
+		args = append(args, status)
+		argIndex++
+	}
+
+	if printerID != "" {
+		query += fmt.Sprintf(" AND printer_id = $%d", argIndex)
+		args = append(args, printerID)
+		argIndex++
+	}
+
+	if userID != "" {
+		query += fmt.Sprintf(" AND user_id = $%d", argIndex)
+		args = append(args, userID)
+		argIndex++
+	}
+
+	var total int
+	err := r.db.DB.QueryRow(query, args...).Scan(&total)
+	return total, err
+}
+
+// CountJobsByStatusAndDate 根据状态和日期范围统计打印任务数量
+func (r *PrintJobRepository) CountJobsByStatusAndDate(status string, startDate, endDate time.Time) (int, error) {
+	query := `SELECT COUNT(*) FROM print_jobs WHERE status = $1 AND created_at >= $2 AND created_at < $3`
+	
+	var count int
+	err := r.db.DB.QueryRow(query, status, startDate, endDate).Scan(&count)
+	return count, err
+}
+
+// ListPrintJobsWithTotal 获取打印任务列表和总数
+func (r *PrintJobRepository) ListPrintJobsWithTotal(limit, offset int, status, printerID, userID string) ([]*models.PrintJob, int, error) {
+	jobs, err := r.ListPrintJobs(limit, offset, status, printerID, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	
+	total, err := r.CountPrintJobs(status, printerID, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	
+	return jobs, total, nil
+}

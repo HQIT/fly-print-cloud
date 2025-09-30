@@ -24,7 +24,7 @@ func NewPrinterHandler(printerRepo *database.PrinterRepository, edgeNodeRepo *da
 
 
 
-// UpdatePrinterRequest 更新打印机请求
+// UpdatePrinterRequest 更新打印机请求（Edge Node使用）
 type UpdatePrinterRequest struct {
 	Name            string                        `json:"name" binding:"required,min=1,max=100"`
 	Model           string                        `json:"model"`
@@ -40,6 +40,41 @@ type UpdatePrinterRequest struct {
 	Location        string                        `json:"location"`
 	Capabilities    models.PrinterCapabilities    `json:"capabilities"`
 	QueueLength     int                           `json:"queue_length"`
+}
+
+// AdminUpdatePrinterRequest 管理界面更新打印机请求
+type AdminUpdatePrinterRequest struct {
+	DisplayName string `json:"display_name" binding:"omitempty,max=100"`
+	Enabled     *bool  `json:"enabled"`  // 使用指针类型以区分未设置和false
+}
+
+// PrinterWithStatus 包含实际状态的打印机信息
+type PrinterWithStatus struct {
+	*models.Printer
+	EdgeNodeEnabled bool   `json:"edge_node_enabled"`
+	ActuallyEnabled bool   `json:"actually_enabled"`
+	DisabledReason  string `json:"disabled_reason,omitempty"`
+}
+
+// NewPrinterWithStatus 创建包含实际状态的打印机信息
+func NewPrinterWithStatus(printer *models.Printer, edgeNodeEnabled bool) *PrinterWithStatus {
+	actuallyEnabled := printer.Enabled && edgeNodeEnabled
+	
+	var disabledReason string
+	if !actuallyEnabled {
+		if !printer.Enabled {
+			disabledReason = "打印机被禁用"
+		} else if !edgeNodeEnabled {
+			disabledReason = "Edge Node被禁用"
+		}
+	}
+	
+	return &PrinterWithStatus{
+		Printer:         printer,
+		EdgeNodeEnabled: edgeNodeEnabled,
+		ActuallyEnabled: actuallyEnabled,
+		DisabledReason:  disabledReason,
+	}
 }
 
 // Edge 注册打印机请求（简化版）
@@ -60,6 +95,7 @@ type EdgeRegisterPrinterRequest struct {
 func (h *PrinterHandler) ListPrinters(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	edgeNodeID := c.Query("edge_node_id") // 支持按Edge Node筛选
 
 	if page < 1 {
 		page = 1
@@ -68,16 +104,53 @@ func (h *PrinterHandler) ListPrinters(c *gin.Context) {
 		pageSize = 10
 	}
 
-	printers, total, err := h.printerRepo.ListPrinters(page, pageSize)
-	if err != nil {
-		log.Printf("Failed to list printers: %v", err)
-		InternalErrorResponse(c, "获取打印机列表失败")
-		return
+	var printers []*models.Printer
+	var total int
+	var err error
+
+	if edgeNodeID != "" {
+		// 按Edge Node筛选
+		printers, err = h.printerRepo.ListPrintersByEdgeNode(edgeNodeID)
+		if err != nil {
+			log.Printf("Failed to list printers by edge node: %v", err)
+			InternalErrorResponse(c, "获取打印机列表失败")
+			return
+		}
+		total = len(printers)
+	} else {
+		// 获取所有打印机
+		printers, total, err = h.printerRepo.ListPrinters(page, pageSize)
+		if err != nil {
+			log.Printf("Failed to list printers: %v", err)
+			InternalErrorResponse(c, "获取打印机列表失败")
+			return
+		}
+	}
+
+	// 获取所有相关的Edge Node状态信息
+	edgeNodeStatusMap := make(map[string]bool)
+	for _, printer := range printers {
+		if _, exists := edgeNodeStatusMap[printer.EdgeNodeID]; !exists {
+			edgeNode, err := h.edgeNodeRepo.GetEdgeNodeByID(printer.EdgeNodeID)
+			if err != nil {
+				log.Printf("Failed to get edge node %s: %v", printer.EdgeNodeID, err)
+				edgeNodeStatusMap[printer.EdgeNodeID] = false // 默认为禁用
+			} else {
+				edgeNodeStatusMap[printer.EdgeNodeID] = edgeNode.Enabled
+			}
+		}
+	}
+
+	// 转换为包含实际状态的打印机信息
+	printersWithStatus := make([]*PrinterWithStatus, len(printers))
+	for i, printer := range printers {
+		edgeNodeEnabled := edgeNodeStatusMap[printer.EdgeNodeID]
+		printersWithStatus[i] = NewPrinterWithStatus(printer, edgeNodeEnabled)
 	}
 
 	totalPages := (total + pageSize - 1) / pageSize
 	response := gin.H{
-		"items":       printers,
+		"items":       printersWithStatus,
 		"total":       total,
 		"page":        page,
 		"page_size":   pageSize,
@@ -101,7 +174,18 @@ func (h *PrinterHandler) GetPrinter(c *gin.Context) {
 		return
 	}
 
-	SuccessResponse(c, printer)
+	// 获取Edge Node状态
+	edgeNode, err := h.edgeNodeRepo.GetEdgeNodeByID(printer.EdgeNodeID)
+	if err != nil {
+		log.Printf("Failed to get edge node %s: %v", printer.EdgeNodeID, err)
+		// 如果无法获取Edge Node状态，假设为禁用
+		printerWithStatus := NewPrinterWithStatus(printer, false)
+		SuccessResponse(c, printerWithStatus)
+		return
+	}
+
+	printerWithStatus := NewPrinterWithStatus(printer, edgeNode.Enabled)
+	SuccessResponse(c, printerWithStatus)
 }
 
 // UpdatePrinter 更新打印机（管理员）
@@ -112,12 +196,6 @@ func (h *PrinterHandler) UpdatePrinter(c *gin.Context) {
 		return
 	}
 
-	var req UpdatePrinterRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		BadRequestResponse(c, "请求参数无效")
-		return
-	}
-
 	// 检查打印机是否存在
 	printer, err := h.printerRepo.GetPrinterByID(printerID)
 	if err != nil {
@@ -125,21 +203,40 @@ func (h *PrinterHandler) UpdatePrinter(c *gin.Context) {
 		return
 	}
 
-	// 更新打印机信息
-	printer.Name = req.Name
-	printer.Model = req.Model
-	printer.SerialNumber = req.SerialNumber
-	printer.Status = req.Status
-	printer.FirmwareVersion = req.FirmwareVersion
-	printer.PortInfo = req.PortInfo
-	printer.IPAddress = req.IPAddress
-	printer.MACAddress = req.MACAddress
-	printer.NetworkConfig = req.NetworkConfig
-	printer.Latitude = req.Latitude
-	printer.Longitude = req.Longitude
-	printer.Location = req.Location
-	printer.Capabilities = req.Capabilities
-	printer.QueueLength = req.QueueLength
+	// 尝试解析为管理界面的简单更新请求
+	var adminReq AdminUpdatePrinterRequest
+	if err := c.ShouldBindJSON(&adminReq); err == nil {
+		// 管理界面更新（仅更新display_name和enabled）
+		if adminReq.DisplayName != "" {
+			printer.DisplayName = adminReq.DisplayName
+		}
+		if adminReq.Enabled != nil {
+			printer.Enabled = *adminReq.Enabled
+		}
+	} else {
+		// 尝试解析为Edge Node的完整更新请求
+		var req UpdatePrinterRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			BadRequestResponse(c, "请求参数无效")
+			return
+		}
+
+		// 更新所有打印机信息
+		printer.Name = req.Name
+		printer.Model = req.Model
+		printer.SerialNumber = req.SerialNumber
+		printer.Status = req.Status
+		printer.FirmwareVersion = req.FirmwareVersion
+		printer.PortInfo = req.PortInfo
+		printer.IPAddress = req.IPAddress
+		printer.MACAddress = req.MACAddress
+		printer.NetworkConfig = req.NetworkConfig
+		printer.Latitude = req.Latitude
+		printer.Longitude = req.Longitude
+		printer.Location = req.Location
+		printer.Capabilities = req.Capabilities
+		printer.QueueLength = req.QueueLength
+	}
 
 	if err := h.printerRepo.UpdatePrinter(printer); err != nil {
 		log.Printf("Failed to update printer %s: %v", printerID, err)

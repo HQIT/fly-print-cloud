@@ -33,7 +33,8 @@ type RegisterEdgeNodeRequest struct {
 // UpdateEdgeNodeRequest Edge Node 更新请求
 type UpdateEdgeNodeRequest struct {
 	Name              string   `json:"name" binding:"required,min=1,max=100"`
-	Status            string   `json:"status" binding:"required,oneof=online offline maintenance"`
+	Status            string   `json:"status" binding:"omitempty,oneof=online offline maintenance"`
+	Enabled           *bool    `json:"enabled"`  // 使用指针类型以区分未设置和false
 	Version           string   `json:"version"`
 	Location          string   `json:"location"`
 	Latitude          *float64 `json:"latitude"`
@@ -49,11 +50,13 @@ type UpdateEdgeNodeRequest struct {
 	Latency           int      `json:"latency"`
 }
 
+
 // EdgeNodeInfo Edge Node 信息响应
 type EdgeNodeInfo struct {
 	ID                string    `json:"id"`
 	Name              string    `json:"name"`
 	Status            string    `json:"status"`
+	Enabled           bool      `json:"enabled"`
 	Version           string    `json:"version"`
 	LastHeartbeat     time.Time `json:"last_heartbeat"`
 	Location          string    `json:"location"`
@@ -100,6 +103,7 @@ func (h *EdgeNodeHandler) RegisterEdgeNode(c *gin.Context) {
 		ID:                node.ID,
 		Name:              node.Name,
 		Status:            node.Status,
+		Enabled:           node.Enabled,
 		Version:           node.Version,
 		LastHeartbeat:     node.LastHeartbeat,
 		Location:          node.Location,
@@ -169,6 +173,7 @@ func (h *EdgeNodeHandler) ListEdgeNodes(c *gin.Context) {
 			ID:                node.ID,
 			Name:              node.Name,
 			Status:            node.Status,
+			Enabled:           node.Enabled,
 			Version:           node.Version,
 			LastHeartbeat:     node.LastHeartbeat,
 			Location:          node.Location,
@@ -217,6 +222,7 @@ func (h *EdgeNodeHandler) GetEdgeNode(c *gin.Context) {
 		ID:                node.ID,
 		Name:              node.Name,
 		Status:            node.Status,
+		Enabled:           node.Enabled,
 		Version:           node.Version,
 		LastHeartbeat:     node.LastHeartbeat,
 		Location:          node.Location,
@@ -262,7 +268,17 @@ func (h *EdgeNodeHandler) UpdateEdgeNode(c *gin.Context) {
 
 	// 更新节点信息
 	node.Name = req.Name
-	node.Status = req.Status
+	
+	// 只有当Status字段不为空时才更新
+	if req.Status != "" {
+		node.Status = req.Status
+	}
+	
+	// 处理Enabled字段更新（逻辑级联，不修改printer的enable状态）
+	if req.Enabled != nil {
+		node.Enabled = *req.Enabled
+	}
+	
 	node.Version = req.Version
 	node.Location = req.Location
 	node.Latitude = req.Latitude
@@ -287,6 +303,7 @@ func (h *EdgeNodeHandler) UpdateEdgeNode(c *gin.Context) {
 		ID:                node.ID,
 		Name:              node.Name,
 		Status:            node.Status,
+		Enabled:           node.Enabled,
 		Version:           node.Version,
 		LastHeartbeat:     node.LastHeartbeat,
 		Location:          node.Location,
