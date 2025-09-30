@@ -166,7 +166,10 @@ func (db *DB) InitTables() error {
 		queue_length INTEGER DEFAULT 0,
 		
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		
+		-- 添加唯一约束以支持 ON CONFLICT
+		UNIQUE (name, edge_node_id)
 	);`
 
 	if _, err := db.Exec(printerTableSQL); err != nil {
